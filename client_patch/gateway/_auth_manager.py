@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass, field
 from typing import Any
@@ -35,8 +36,22 @@ from psi_agent.gateway._auth_store import AuthStore
 # 云端是滑动过期 (每次请求刷 last_used_at), 60 天内正常使用不会掉线。
 _UNAUTHORIZED = 401
 
-# 云端认证服务的统一前缀, 与 psi-agent-auth 的契约一致。
-_PREFIX = "/api/auth"
+# 云端认证服务的路由前缀。
+#
+# 默认 ``/api/auth``, 与 psi-agent-auth 的契约一致; 但线上存在**另一种形态**
+# (psi-cloud 直接在根路径提供 ``/otp`` ``/verify/email`` 等, 无前缀), 因此做成
+# 可配。写死会导致对着其中一种部署全部 404 —— 这不是能靠"以后改"糊过去的,
+# 客户端一旦发出去就改不动了。
+#
+# 空串表示无前缀, 以 ``PSI_AUTH_PREFIX`` 覆盖 (例如 ``PSI_AUTH_PREFIX=""``)。
+_DEFAULT_PREFIX = "/api/auth"
+
+
+def _resolve_prefix() -> str:
+    raw = os.environ.get("PSI_AUTH_PREFIX")
+    if raw is None:
+        return _DEFAULT_PREFIX
+    return raw.rstrip("/")
 
 # 单次请求上限。发码要过云端再到供应商, 给宽松些; 但必须有界, 否则网络黑洞会挂住
 # 整个 Gateway 请求。
@@ -48,6 +63,8 @@ class AuthManager:
     """持有登录态, 代理云端认证 API。"""
 
     endpoint: str = ""
+    prefix: str = _DEFAULT_PREFIX
+    """云端路由前缀。默认 ``/api/auth``; psi-cloud 那种根路径形态传 ``""``。"""
     _store: AuthStore | None = None
     _token: str = ""
     _device_key: str = ""
@@ -63,6 +80,7 @@ class AuthManager:
         device_key = await store.device_key()
         mgr = cls(
             endpoint=endpoint.rstrip("/"),
+            prefix=_resolve_prefix(),
             _store=store,
             _token=token,
             _device_key=device_key,
@@ -101,7 +119,7 @@ class AuthManager:
             if not self._token:
                 return _UNAUTHORIZED, {"error": "unauthorized"}
             headers["Authorization"] = f"Bearer {self._token}"
-        url = f"{self.endpoint}{_PREFIX}{path}"
+        url = f"{self.endpoint}{self.prefix}{path}"
         try:
             session = self._ensure_session()
             async with session.request(method, url, json=payload, headers=headers) as resp:
@@ -226,6 +244,8 @@ class AuthManager:
         """给 SPA 判断该显示登录引导还是身份信息。不含 token 本身。"""
         return {
             "endpoint": self.endpoint,
+            # 暴露前缀: 对不上时全部 404, 这是第一个该看的地方
+            "prefix": self.prefix,
             "loggedIn": bool(self._token),
             "deviceKey": self._device_key,
             "platform": self._platform,

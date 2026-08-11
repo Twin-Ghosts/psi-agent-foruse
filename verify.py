@@ -95,6 +95,10 @@ def main():
     for label, rel, args, expect in SUITES:
         if quick and "--negative" in args:
             continue
+        if quick and rel == "自检_SPA登录.py":
+            # 冒烟时跳过 vite build（最慢一步）。构建失败是真实交付事故，
+            # 所以完整验收里它必须跑——这也是 --quick 不等于验收通过的又一条理由。
+            args = args + ["--no-build"]
         code, out = run(rel, args)
         ok = (code != 0) if expect == "expect_fail" else (code == 0)
         rows.append((label, ok, code, out.strip().splitlines()[-1:]))

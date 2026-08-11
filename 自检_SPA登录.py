@@ -163,9 +163,11 @@ def test_unit():
     check("单测数量不少于 15（少于此说明覆盖不足）", n >= 15, f"{n} 项")
 
 
-def run_all():
+def run_all(skip_build=False):
     PASS.clear(); FAIL.clear(); RESULTS.clear()
-    for fn in (test_files_exist, test_typecheck, test_build, test_unit):
+    fns = (test_files_exist, test_typecheck, test_unit) if skip_build else (
+        test_files_exist, test_typecheck, test_build, test_unit)
+    for fn in fns:
         try:
             fn()
         except Exception as e:
@@ -263,7 +265,9 @@ def main():
         return 2
     if "--negative" in sys.argv:
         return run_negative()
-    s = run_all()
+    # --no-build 供日常冒烟用：跳过 vite build（最慢的一步）。
+    # 合库前必须跑完整版——构建失败是真实交付事故，不能只靠类型检查兜。
+    s = run_all(skip_build="--no-build" in sys.argv)
     print(f"\n通过 {s['passed']} / {s['total']}，失败 {s['failed']}")
     if s["failed"]:
         print("失败项：" + "; ".join(s["failures"][:10]))

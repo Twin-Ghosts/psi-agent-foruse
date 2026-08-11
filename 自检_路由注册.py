@@ -81,7 +81,11 @@ class CloudHandler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def _go(self, method):
-        path = urlparse(self.path).path.replace("/api/auth", "", 1)
+        raw_path = urlparse(self.path).path
+        # 同时接受带前缀与裸路径：前缀可配，mock 不该只认一种
+        path = raw_path.replace("/api/auth", "", 1)
+        if path.startswith("/auth/"):
+            path = path[len("/auth"):]
         n = int(self.headers.get("Content-Length", 0) or 0)
         body = {}
         if n:
@@ -90,6 +94,7 @@ class CloudHandler(BaseHTTPRequestHandler):
             except ValueError:
                 body = {}
         CLOUD["seen"].append({"m": method, "p": path, "b": body,
+                              "raw_path": raw_path,
                               "auth": self.headers.get("Authorization")})
         if path in ("/sms/send", "/otp"):
             return self._json({"retryAfter": 60})
@@ -300,6 +305,53 @@ def test_end_to_end():
     anyio.run(body)
 
 
+def test_prefix_configurable():
+    section("[5] 云端路由前缀可配（线上存在两种形态）")
+    # 本仓库契约是 /api/auth/*；但服务器上的 psi-cloud 直接在根路径提供
+    # /otp、/verify/email。前缀写死会导致对着其中一种部署全部 404，
+    # 而客户端一旦发布就改不动了。
+    import importlib
+
+    src = open(os.path.join(os.path.abspath(FULL_SRC), "psi_agent", "gateway",
+                            "_auth_manager.py"), encoding="utf-8").read()
+    check("前缀不是写死的常量拼接",
+          "self.prefix" in src and "_resolve_prefix" in src,
+          "前缀被写死，换部署形态就全部 404")
+    check("可用 PSI_AUTH_PREFIX 覆盖", "PSI_AUTH_PREFIX" in src)
+    check("status() 暴露 prefix（404 时第一个该看的地方）",
+          '"prefix": self.prefix' in src)
+
+    async def body():
+        # 关键：断言**实际请求到的路径**，不是 status() 里报出来的字段。
+        # 只查报告值的话，"把 URL 拼接写死但字段仍在"这种退化不会被发现
+        # （第一版就是这么漏掉的）。
+        cases = [(None, "/api/auth/otp"), ("", "/otp"), ("/auth/", "/auth/otp")]
+        for env, expect_path in cases:
+            if env is None:
+                os.environ.pop("PSI_AUTH_PREFIX", None)
+            else:
+                os.environ["PSI_AUTH_PREFIX"] = env
+            for m in [k for k in sys.modules if "auth_manager" in k]:
+                del sys.modules[m]
+            importlib.invalidate_caches()
+            from psi_agent.gateway._auth_manager import AuthManager as AM
+
+            srv, base = serve_cloud()
+            CLOUD["seen"].clear()
+            mgr = await AM.create(base, appdata_root=tempfile.mkdtemp())
+            try:
+                await mgr.send_code(email="p@example.com")
+                got = CLOUD["seen"][-1]["raw_path"] if CLOUD["seen"] else "(无请求)"
+                check(f"PSI_AUTH_PREFIX={env!r} 时实际请求 {expect_path}",
+                      got == expect_path, f"实际请求了 {got}")
+            finally:
+                await mgr.aclose()
+                srv.shutdown()
+        os.environ.pop("PSI_AUTH_PREFIX", None)
+
+    anyio.run(body)
+
+
 def test_cloud_down():
     section("[4] 云端不可达时的表现")
 
@@ -328,7 +380,7 @@ def test_cloud_down():
 def run_all():
     PASS.clear(); FAIL.clear(); RESULTS.clear()
     for fn in (test_zero_regression, test_route_shapes, test_end_to_end,
-               test_cloud_down):
+               test_prefix_configurable, test_cloud_down):
         try:
             fn()
         except Exception as e:
@@ -366,6 +418,11 @@ SABOTAGES = [
      "_auth_manager.py", lambda s: s.replace(
          '            "loggedIn": bool(self._token),',
          '            "loggedIn": bool(self._token),\n            "token": self._token,')),
+    ("云端路由前缀写死",
+     "对着另一种部署形态（psi-cloud 根路径）会全部 404，且客户端发布后改不动",
+     "_auth_manager.py", lambda s: s.replace(
+         'url = f"{self.endpoint}{self.prefix}{path}"',
+         'url = f"{self.endpoint}/api/auth{path}"')),
 ]
 
 GATEWAY_DIR = os.path.join(os.path.abspath(FULL_SRC), "psi_agent", "gateway")
