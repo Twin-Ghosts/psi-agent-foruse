@@ -1,0 +1,35 @@
+--- a/src/psi_agent/gateway/spa-v2/src/components/user-hub/user-hub.css
++++ b/src/psi_agent/gateway/spa-v2/src/components/user-hub/user-hub.css
+@@ -524,6 +524,32 @@
+   color: var(--ink-soft);
+ }
+ 
++/* 登录失败提示。用 --coral 而非硬编码红色，跟随主题色板。 */
++.hub-login-error {
++  margin: 8px 0 0;
++  font-size: 13px;
++  line-height: 1.5;
++  color: var(--coral);
++}
++
++/* 请求中的转圈。prefers-reduced-motion 下停转 —— 无障碍要求。 */
++.hub-spin {
++  animation: hub-spin-rotate 0.9s linear infinite;
++  vertical-align: -2px;
++}
++
++@keyframes hub-spin-rotate {
++  to {
++    transform: rotate(360deg);
++  }
++}
++
++@media (prefers-reduced-motion: reduce) {
++  .hub-spin {
++    animation: none;
++  }
++}
++
+ .hub-settings-section {
+   margin-bottom: 16px;
+ }

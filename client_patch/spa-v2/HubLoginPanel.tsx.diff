@@ -1,0 +1,350 @@
+--- a/src/psi_agent/gateway/spa-v2/src/components/user-hub/HubLoginPanel.tsx
++++ b/src/psi_agent/gateway/spa-v2/src/components/user-hub/HubLoginPanel.tsx
+@@ -1,3 +1,29 @@
++import { useCallback, useEffect, useRef, useState } from 'react'
++import { Loader2, LogOut, MonitorSmartphone, ShieldAlert, Trash2 } from 'lucide-react'
++
++import {
++  authLogout,
++  completeAuth,
++  getAuthMe,
++  getAuthStatus,
++  listAuthDevices,
++  revokeAuthDevice,
++  sendAuthCode,
++  verifyAuthCode,
++  type AuthDevice,
++  type AuthIdentity,
++  type AuthStatus,
++  type AuthUser,
++} from '../../services/api'
++import {
++  cooldownFrom,
++  humanizeAuthError as humanize,
++  isNewUser as isNewSignup,
++  needsComplete,
++  normalizeCode,
++  validateAccount,
++  type Channel,
++} from '../../services/authFlow'
+ import HubDialog from './HubDialog'
+ 
+ type Props = {
+@@ -5,19 +31,311 @@
+   onClose: () => void
+ }
+ 
++type Stage = 'input' | 'code' | 'done'
++
+ export default function HubLoginPanel({ show, onClose }: Props) {
++  const [status, setStatus] = useState<AuthStatus | null>(null)
++  const [channel, setChannel] = useState<Channel>('phone')
++  const [account, setAccount] = useState('')
++  const [code, setCode] = useState('')
++  const [invitation, setInvitation] = useState('')
++  const [stage, setStage] = useState<Stage>('input')
++  const [busy, setBusy] = useState(false)
++  const [error, setError] = useState('')
++  const [notice, setNotice] = useState('')
++  const [cooldown, setCooldown] = useState(0)
++  const [me, setMe] = useState<{ user: AuthUser; identities: AuthIdentity[] } | null>(null)
++  const [devices, setDevices] = useState<AuthDevice[]>([])
++  const timer = useRef<number | null>(null)
++
++  // 倒计时：服务端返回 retryAfter，前端照着走，不自己拍一个数字
++  useEffect(() => {
++    if (cooldown <= 0) return
++    timer.current = window.setTimeout(() => setCooldown((n) => n - 1), 1000)
++    return () => {
++      if (timer.current !== null) window.clearTimeout(timer.current)
++    }
++  }, [cooldown])
++
++  const refresh = useCallback(async () => {
++    try {
++      const st = await getAuthStatus()
++      setStatus(st)
++      if (st.available && st.loggedIn) {
++        setStage('done')
++        const [info, devs] = await Promise.all([
++          getAuthMe().catch(() => null),
++          listAuthDevices().catch(() => ({ devices: [] as AuthDevice[] })),
++        ])
++        setMe(info)
++        setDevices(devs.devices)
++      } else {
++        setStage('input')
++        setMe(null)
++        setDevices([])
++      }
++    } catch (e) {
++      setError(humanize(e))
++    }
++  }, [])
++
++  // 每次打开都重新探：Gateway 可能在别处已登出，或云端撤销了本设备
++  useEffect(() => {
++    if (show) void refresh()
++  }, [show, refresh])
++
++  const reset = () => {
++    setCode('')
++    setError('')
++    setNotice('')
++    setStage('input')
++  }
++
++  const onSend = async () => {
++    setError('')
++    setNotice('')
++    const value = account.trim()
++    const invalid = validateAccount(channel, value)
++    if (invalid) {
++      setError(invalid)
++      return
++    }
++    setBusy(true)
++    try {
++      const res = await sendAuthCode({
++        [channel]: value,
++        ...(invitation.trim() ? { invitationCode: invitation.trim() } : {}),
++      })
++      setStage('code')
++      setCooldown(cooldownFrom(res.retryAfter))
++      setNotice(channel === 'phone' ? '验证码已发送到手机' : '验证码已发送到邮箱，请查收（含垃圾邮件箱）')
++    } catch (e) {
++      setError(humanize(e))
++    } finally {
++      setBusy(false)
++    }
++  }
++
++  const onVerify = async () => {
++    setError('')
++    const value = account.trim()
++    if (!code.trim()) {
++      setError('请填写验证码')
++      return
++    }
++    setBusy(true)
++    try {
++      const res = await verifyAuthCode({ code: code.trim(), [channel]: value })
++      // 新用户走两段式：先拿 tempToken，再 complete 建号。首版无需补充信息，
++      // 因此这里自动接上，用户无感；将来要加「选昵称」在此插一步即可。
++      const fresh = isNewSignup(res)
++      if (needsComplete(res)) {
++        await completeAuth({
++          tempToken: res.tempToken as string,
++          ...(invitation.trim() ? { invitationCode: invitation.trim() } : {}),
++        })
++      }
++      await refresh()
++      setNotice(fresh ? '注册成功，已登录' : '登录成功')
++    } catch (e) {
++      setError(humanize(e))
++    } finally {
++      setBusy(false)
++    }
++  }
++
++  const onLogout = async () => {
++    setBusy(true)
++    setError('')
++    try {
++      await authLogout()
++      setAccount('')
++      reset()
++      await refresh()
++    } catch (e) {
++      setError(humanize(e))
++    } finally {
++      setBusy(false)
++    }
++  }
++
++  const onRevoke = async (id: string) => {
++    setBusy(true)
++    setError('')
++    try {
++      await revokeAuthDevice(id)
++      await refresh()
++      setNotice('已移除该设备，它下次请求就会被要求重新登录')
++    } catch (e) {
++      setError(humanize(e))
++    } finally {
++      setBusy(false)
++    }
++  }
++
+   return (
+     <HubDialog
+       show={show}
+       title="登录"
+-      width={400}
++      width={440}
+       onClose={onClose}
+-      actions={<button type="button" className="hub-btn primary" onClick={onClose}>知道了</button>}
++      actions={
++        stage === 'done' ? (
++          <button type="button" className="hub-btn ghost" onClick={onLogout} disabled={busy}>
++            <LogOut size={15} /> 退出登录
++          </button>
++        ) : (
++          <button type="button" className="hub-btn ghost" onClick={onClose}>
++            稍后再说
++          </button>
++        )
++      }
+     >
+-      <p className="hub-login-body">
+-        当前为<strong>本地 Gateway 模式</strong>，无需登录即可使用 Web 控制台。
+-      </p>
+-      <p className="hub-login-hint">账号登录与云端同步将在后续版本提供。</p>
++      {status === null ? (
++        <p className="hub-login-body">
++          <Loader2 size={15} className="hub-spin" /> 正在检查登录状态…
++        </p>
++      ) : !status.available ? (
++        // 未配 --auth-endpoint：保留原先的本地模式说明，不给一个点不动的登录表单
++        <>
++          <p className="hub-login-body">
++            当前为<strong>本地 Gateway 模式</strong>，无需登录即可使用 Web 控制台。
++          </p>
++          <p className="hub-login-hint">
++            启动时加上 <code>--auth-endpoint</code> 才会启用账号登录与多设备管理。
++          </p>
++        </>
++      ) : stage === 'done' && me ? (
++        <>
++          <div className="hub-section">
++            <h4>当前账号</h4>
++            <p className="hub-login-body">
++              {me.user.displayName || me.user.id}
++              {me.identities.length > 0 ? (
++                <>
++                  <br />
++                  <span className="hub-login-hint">
++                    已绑定：
++                    {me.identities
++                      .map((i) => `${i.provider === 'phone' ? '手机号' : '邮箱'} ${i.identifier}`)
++                      .join('、')}
++                  </span>
++                </>
++              ) : null}
++            </p>
++          </div>
++          <div className="hub-section">
++            <h4>
++              <MonitorSmartphone size={15} /> 已登录设备（{devices.length}）
++            </h4>
++            {devices.map((d) => (
++              <div className="user-hub-row" key={d.id}>
++                <span>
++                  {d.name || d.platform}
++                  {d.current ? <strong>（本机）</strong> : null}
++                  <br />
++                  <span className="hub-login-hint">最近活跃 {d.lastSeenAt || d.createdAt}</span>
++                </span>
++                {d.current ? null : (
++                  <button
++                    type="button"
++                    className="hub-btn ghost"
++                    onClick={() => void onRevoke(d.id)}
++                    disabled={busy}
++                    aria-label="移除设备"
++                  >
++                    <Trash2 size={15} /> 移除
++                  </button>
++                )}
++              </div>
++            ))}
++            <p className="hub-login-hint">移除后，该设备下次请求即失效，无需等待过期。</p>
++          </div>
++          {!status.credentialEncrypted ? (
++            <p className="hub-login-hint">
++              <ShieldAlert size={14} /> 系统钥匙串不可用，本机凭证以明文保存。建议安装
++              keyring 后重启客户端。
++            </p>
++          ) : null}
++        </>
++      ) : (
++        <>
++          <div className="hub-field">
++            <span>登录方式</span>
++            <select
++              value={channel}
++              onChange={(e) => {
++                setChannel(e.target.value as Channel)
++                setAccount('')
++                reset()
++              }}
++              disabled={busy || stage === 'code'}
++            >
++              <option value="phone">手机号</option>
++              <option value="email">邮箱</option>
++            </select>
++          </div>
++          <div className="hub-field">
++            <span>{channel === 'phone' ? '手机号（中国大陆）' : '邮箱'}</span>
++            <input
++              value={account}
++              onChange={(e) => setAccount(e.target.value)}
++              placeholder={channel === 'phone' ? '13800000000' : 'you@example.com'}
++              disabled={busy || stage === 'code'}
++              inputMode={channel === 'phone' ? 'numeric' : 'email'}
++              autoComplete={channel === 'phone' ? 'tel' : 'email'}
++            />
++          </div>
++          {stage === 'code' ? (
++            <div className="hub-field">
++              <span>验证码</span>
++              <input
++                value={code}
++                onChange={(e) => setCode(normalizeCode(e.target.value))}
++                placeholder="6 位数字"
++                inputMode="numeric"
++                autoComplete="one-time-code"
++                disabled={busy}
++              />
++            </div>
++          ) : null}
++          <div className="hub-field">
++            <span>邀请码（如未开启门禁可留空）</span>
++            <input
++              value={invitation}
++              onChange={(e) => setInvitation(e.target.value)}
++              placeholder="选填"
++              disabled={busy}
++            />
++          </div>
++          <div className="user-hub-row">
++            <button
++              type="button"
++              className="hub-btn primary"
++              onClick={() => void onSend()}
++              disabled={busy || cooldown > 0}
++            >
++              {cooldown > 0 ? `${cooldown} 秒后可重发` : stage === 'code' ? '重新发送' : '获取验证码'}
++            </button>
++            {stage === 'code' ? (
++              <button
++                type="button"
++                className="hub-btn primary"
++                onClick={() => void onVerify()}
++                disabled={busy || code.trim().length === 0}
++              >
++                {busy ? <Loader2 size={15} className="hub-spin" /> : null} 登录 / 注册
++              </button>
++            ) : null}
++          </div>
++          <p className="hub-login-hint">
++            首次使用该手机号或邮箱会自动创建账号，无需单独注册；不设密码。
++          </p>
++          {notice ? <p className="hub-login-hint">{notice}</p> : null}
++          {error ? <p className="hub-login-error">{error}</p> : null}
++        </>
++      )}
++      {stage === 'done' && error ? <p className="hub-login-error">{error}</p> : null}
+     </HubDialog>
+   )
+ }

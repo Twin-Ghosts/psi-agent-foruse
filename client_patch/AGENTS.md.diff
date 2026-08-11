@@ -1,0 +1,44 @@
+--- a/src/psi_agent/gateway/AGENTS.md
++++ b/src/psi_agent/gateway/AGENTS.md
+@@ -21,6 +21,7 @@
+ ├── HistoryManager     — JSONL 历史读取（AppData `histories/` + legacy 双读）
+ ├── TodoManager        — 会话 todo 列表只读（AppData `todos/` + legacy workspace 双读）
+ ├── OAuthRelay         — OAuth 回调中继（state → code 一次性信箱，免用户手工复制授权码）
++├── AuthManager        — 登录态持有者 + 云端认证客户端（`--auth-endpoint` 为空则不创建）
+ ├── GatewayState       — 状态持久化到 AppData `state/latest.json`（legacy cwd 双读）
+ ├── aiohttp REST Server  — OpenAPI CRUD + Web UI chat
+ ├── spa/               — Vue 3 SPA 前端项目 (Vite + SFC)
+@@ -42,6 +43,8 @@
+ | `_defaults.py` | `resolve_default_agent` / `resolve_default_workspace`；再导出 ``psi_agent._appdata`` 路径助手 — CLI / `GET /defaults` 用 |
+ | `_feishu_manager.py` | `FeishuManager` — 飞书会话 → Session 路由表（私聊按 `open_id`、群聊按 `chat_id`；复用 SessionManager 按需 spawn）+ FeishuRoute |
+ | `_oauth_manager.py` | `OAuthRelay` — OAuth 回调中继（`state → code` 一次性信箱，带 TTL；供 `GET /oauth/callback` + `GET /oauth/code`），让授权码免用户手工复制 |
++| `_auth_manager.py` | `AuthManager` — 登录态持有者 + 云端认证服务 aiohttp 客户端（发码 / 校验 / me / logout / devices），持有 `device_key`；**不持任何供应商密钥**（安装包里放 AK/SK 等于公开发布）。`--auth-endpoint` 为空则整套不加载 |
++| `_auth_store.py` | 凭证落盘 `{appdata}/auth.enc.json`（keyring 加解密）+ `device_key` 持久化；职责同 `_state.py`，但**不进 state 快照**（那里的 api_key 是明文，凭证不再踩这个坑）。钥匙串不可用时降级到明文并告警，不静默 |
+ | `_title_manager.py` | 会话标题 CRUD + AI 自动生成 |
+ | `_summary_manager.py` | 任务摘要 CRUD + AI 自动生成（spa-v2；与 title 同级持久化） |
+ | `_state.py` | `GatewayState` — `{appdata}/state/latest.json` + 时间戳快照；缺则双读 cwd `state/latest.json` |
+@@ -69,7 +72,8 @@
+ 6. 创建 AIManager + RouterManager + SessionManager（注入 `_default_agent` / `_default_workspace`）+ TitleManager + SummaryManager
+ 7. 恢复 AI / Router / Session（Session 恢复时带 `agent`，缺省用 Gateway default）/ titles / summaries
+ 8. 创建 SchedulerManager（`--scheduler-ai-id`，空则回落 `--feishu-ai-id`）
+-9. await create_app(..., default_agent=..., default_workspace=..., appdata=..., schedm=...)  — 注册 REST（含 `GET /defaults`）
++8.5 创建 AuthManager（仅当 `--auth-endpoint` 非空；从 `{appdata}/auth.enc.json` 恢复登录态）— 为空则跳过，`/auth/*` 一条都不注册
++9. await create_app(..., default_agent=..., default_workspace=..., appdata=..., schedm=..., authm=...)  — 注册 REST（含 `GET /defaults`）
+ 10. 为每个已恢复 Session 的 workspace `schedm.ensure(...)` — 按需拉起调度 Session（无 `schedules/` 则跳过）
+ 11. 创建 _do_persist 闭包（快照 managers → state.save，sessions 含 `agent`；`list_all()` 默认已排除调度 Session）
+ 12. 注入 _persist + 初始全量持久化
+@@ -418,6 +422,14 @@
+ | GET | `/feishu/routes` | 列出所有飞书会话 → Session 路由 `[{open_id, chat_id, session_id}]`（群聊记录只有 `chat_id`，私聊只有 `open_id`） |
+ | GET | `/oauth/callback` | OAuth 重定向落地点：收下 `?code=&state=` 交给 `OAuthRelay` 暂存，回一张「授权成功」页；缺 state → 400。用户因此**不必**手工复制 code |
+ | GET | `/oauth/code` | 发起方（workspace 工具，通常在另一进程）按 `?state=` 取件，命中返回 `{state, code}` 并作废（一次性）；回调带错误则 `{state, error}`；未到达 → 404 |
++| GET | `/auth/status` | 当前登录态 `{endpoint, loggedIn, deviceKey, platform, credentialEncrypted}`；**不含 token**。未配 `--auth-endpoint` 时本路由不存在 |
++| POST | `/auth/send-code` | 请云端发验证码 `{phone?, email?, invitationCode?}`；二者都缺 → 400；云端不可达 → 502 |
++| POST | `/auth/verify` | 校验验证码 `{code, phone?, email?}`；老用户直接登录并落盘凭证，新用户返回 `{tempToken, isNewUser}`。转发时自动带上 `deviceKey` / `platform` |
++| POST | `/auth/complete` | 两段式注册第二段 `{tempToken, displayName?, invitationCode?}` → 建号并落盘正式 token |
++| GET | `/auth/me` | 转发云端 `/me`；云端 401 时**如实转发**并清本机凭证（不假装已登录） |
++| POST | `/auth/logout` | 撤销本会话；云端不可达时也清本机（否则界面骗人） |
++| GET | `/auth/devices` | 已登录设备列表（R5） |
++| DELETE | `/auth/devices/{device_id}` | 踢掉某台设备，该设备下次请求即 401（R5） |
+ | GET | `/defaults` | 默认 `agent` + `workspace` + `appdata`（建 Session 调用方可读；`appdata` 为记忆区根：todos / history / Gateway state） |
+ | GET | `/workspace/cwd` | Gateway 进程当前工作目录 |
+ | GET | `/workspace/places` | PathPicker 快捷位置（cwd / home / desktop / documents / downloads）+ 盘符 |

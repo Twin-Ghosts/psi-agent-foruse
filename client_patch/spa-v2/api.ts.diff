@@ -1,0 +1,117 @@
+--- a/src/psi_agent/gateway/spa-v2/src/services/api.ts
++++ b/src/psi_agent/gateway/spa-v2/src/services/api.ts
+@@ -252,3 +252,114 @@
+   if (!r.body) throw new Error('No response body')
+   return r.body.getReader()
+ }
++
++// ---------------------------------------------------------------- 认证 (/auth/*)
++//
++// 这些接口只在 Gateway 以 `--auth-endpoint` 启动时存在；未配置时全部 404。
++// 前端必须先探 `getAuthStatus()`，据 `available` 决定显示登录入口还是「本地模式」
++// 说明 —— 不能假定端点一定在。
++//
++// token 全程由 Gateway 侧持有并加密落盘，**前端拿不到也不该存 token**：
++// 页面脚本一旦持有凭证，XSS 即等于凭证泄露。
++
++export type AuthStatus = {
++  /** Gateway 是否配了云端地址；false 时其余字段无意义 */
++  available: boolean
++  endpoint: string
++  loggedIn: boolean
++  deviceKey: string
++  platform: string
++  /** 钥匙串不可用时为 false —— 界面应提示「凭证未加密」而非假装安全 */
++  credentialEncrypted: boolean
++}
++
++export type AuthUser = {
++  id: string
++  displayName: string | null
++  avatarUrl: string | null
++  createdAt: string
++}
++
++export type AuthIdentity = {
++  provider: string
++  identifier: string
++  verifiedAt?: string | null
++}
++
++export type AuthDevice = {
++  id: string
++  platform: string
++  name: string | null
++  createdAt: string
++  lastSeenAt: string | null
++  current: boolean
++}
++
++export type SendCodeResult = { retryAfter: number }
++
++/** 校验结果：老用户直接登录，新用户给 tempToken 走 completeAuth。 */
++export type VerifyResult = {
++  token?: string
++  tempToken?: string
++  isNewUser?: boolean
++  user?: AuthUser
++}
++
++/** 探测认证是否可用。404 表示 Gateway 未配 `--auth-endpoint`，不是错误。 */
++export async function getAuthStatus(): Promise<AuthStatus> {
++  const r = await fetch(G() + '/auth/status')
++  if (r.status === 404) {
++    return {
++      available: false,
++      endpoint: '',
++      loggedIn: false,
++      deviceKey: '',
++      platform: '',
++      credentialEncrypted: false,
++    }
++  }
++  if (!r.ok) throw new Error(`HTTP ${r.status}`)
++  const data = (await r.json()) as Omit<AuthStatus, 'available'>
++  return { ...data, available: true }
++}
++
++export async function sendAuthCode(body: {
++  phone?: string
++  email?: string
++  invitationCode?: string
++}): Promise<SendCodeResult> {
++  return api<SendCodeResult>('POST', '/auth/send-code', body)
++}
++
++export async function verifyAuthCode(body: {
++  code: string
++  phone?: string
++  email?: string
++}): Promise<VerifyResult> {
++  return api<VerifyResult>('POST', '/auth/verify', body)
++}
++
++export async function completeAuth(body: {
++  tempToken: string
++  displayName?: string
++  invitationCode?: string
++}): Promise<{ token?: string; user?: AuthUser }> {
++  return api<{ token?: string; user?: AuthUser }>('POST', '/auth/complete', body)
++}
++
++export async function getAuthMe(): Promise<{ user: AuthUser; identities: AuthIdentity[] }> {
++  return api<{ user: AuthUser; identities: AuthIdentity[] }>('GET', '/auth/me')
++}
++
++export async function authLogout(): Promise<{ ok: boolean }> {
++  return api<{ ok: boolean }>('POST', '/auth/logout')
++}
++
++export async function listAuthDevices(): Promise<{ devices: AuthDevice[] }> {
++  return api<{ devices: AuthDevice[] }>('GET', '/auth/devices')
++}
++
++export async function revokeAuthDevice(deviceId: string): Promise<{ ok: boolean }> {
++  return api<{ ok: boolean }>('DELETE', `/auth/devices/${encodeURIComponent(deviceId)}`)
++}
++

@@ -1,0 +1,62 @@
+--- a/src/psi_agent/gateway/__init__.py
++++ b/src/psi_agent/gateway/__init__.py
+@@ -15,6 +15,7 @@
+ from psi_agent._sockets import create_site
+ from psi_agent.gateway._ai_manager import AIManager
+ from psi_agent.gateway._attention import AttentionHub
++from psi_agent.gateway._auth_manager import AuthManager
+ from psi_agent.gateway._defaults import resolve_appdata_root, resolve_default_agent, resolve_default_workspace
+ from psi_agent.gateway._router_manager import RouterManager, RouterUpstreamInfo
+ from psi_agent.gateway._scheduler_manager import SchedulerManager
+@@ -106,6 +107,17 @@
+     空 = 回落 ``--feishu-ai-id``; 两者都空则不启动调度 Session (记 warning)。
+     """
+ 
++    auth_endpoint: str = ""
++    """云端认证服务地址 (如 ``https://account.example.com``)。
++
++    空 = **完全不启用认证**: 不创建 ``AuthManager``、不注册 ``/auth/*``、不读写
++    本机凭证文件。现有本地单用户流程因此零回归 —— 这是本期改动的安全边界。
++
++    非空时客户端只做转发与本机凭证管理: 不持任何供应商密钥 (安装包里放阿里云
++    AK/SK 或 Resend key 等于公开发布), 授权判定全在云端 (用户本人即机器管理员,
++    客户端侧校验可被绕过)。
++    """
++
+     verbose: bool = False
+     """Enable DEBUG-level logging."""
+ 
+@@ -200,6 +212,15 @@
+ 
+             attention = AttentionHub()
+             schedm = SchedulerManager(_sm=sm, _ai_id=self.scheduler_ai_id or self.feishu_ai_id)
++            # 认证是**旁挂**的: 不注入 Session 的构造参数, 不写 ContextVar, 不参与
++            # _do_persist 的 manager 快照 (凭证不进 state/latest.json —— 那里的
++            # api_key 是明文, 登录凭证不再踩这个坑)。auth_endpoint 为空则整套不加载。
++            authm: AuthManager | None = None
++            if self.auth_endpoint.strip():
++                authm = await AuthManager.create(self.auth_endpoint.strip(), appdata_root=appdata_root)
++                logger.info(f"Auth endpoint: {self.auth_endpoint.strip()}")
++            else:
++                logger.debug("Auth disabled (--auth-endpoint not set)")
+             app = await create_app(
+                 aim,
+                 sm,
+@@ -216,6 +237,7 @@
+                 scheduler_ai_id=self.scheduler_ai_id,
+                 schedm=schedm,
+                 sum_m=sum_m,
++                authm=authm,
+             )
+ 
+             # Restored sessions need a scheduler Session for their workspace too
+@@ -330,5 +352,9 @@
+                 logger.info("Shutting down Gateway")
+                 with anyio.CancelScope(shield=True):
+                     await runner.cleanup()
++                    # AuthManager 持有 aiohttp 会话, 必须显式关闭, 否则退出时
++                    # 会报 "Unclosed client session"。shield 内执行: 取消时也要清。
++                    if authm is not None:
++                        await authm.aclose()
+                 tg.cancel_scope.cancel()
+         logger.info("Gateway shutdown complete")

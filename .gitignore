@@ -1,0 +1,34 @@
+# 依赖与虚拟环境
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 数据与备份：SQLite 库绝不能进版本库
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+data/
+backups/
+
+# 凭据：供应商密钥只走环境变量，任何 .env 都不许提交
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# 日志与临时文件
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+.DS_Store
