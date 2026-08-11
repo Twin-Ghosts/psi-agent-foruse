@@ -11,6 +11,9 @@
   # 不配 endpoint 则整套认证不加载，界面显示「本地 Gateway 模式」
   python run_gateway.py
 
+  # 不自动开浏览器（自动化验证 / 无桌面环境）
+  PSI_NO_BROWSER=1 python run_gateway.py
+
 浏览器打开 http://127.0.0.1:8080/
 """
 import os
@@ -71,9 +74,13 @@ def main() -> None:
         print(f"认证已启用：{endpoint}  前缀 {shown}")
     else:
         print("认证未启用：未设 PSI_AUTH_ENDPOINT，界面将显示「本地 Gateway 模式」")
+    # 默认开浏览器（人用时想要），但要能关掉：自动化验证 / 无桌面环境 / 只想探
+    # HTTP 接口时，弹一个标签页是干扰。设 PSI_NO_BROWSER=1 即不开。
+    no_browser = os.environ.get("PSI_NO_BROWSER", "").strip().lower() in (
+        "1", "true", "yes", "on")
     gw = Gateway(
         listen=os.environ.get("PSI_LISTEN", "http://127.0.0.1:8080"),
-        browser=True,  # 启动后自动开浏览器
+        browser=not no_browser,
         auth_endpoint=endpoint,
         verbose=True,
     )
