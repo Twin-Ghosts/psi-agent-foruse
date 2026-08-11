@@ -32,3 +32,8 @@ htmlcov/
 .idea/
 *.swp
 .DS_Store
+
+# 备份文件不进版本库（自检的反向验证会临时产生）
+*.bak
+*.selfcheck-bak
+.commitmsg.tmp

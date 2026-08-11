@@ -230,14 +230,20 @@ def run_negative():
             all_caught = False
             print(f"  [无效] {name}：破坏点未匹配到源码文本，需更新反向验证")
             continue
-        backup = path + ".selfcheck-bak"
-        shutil.copy2(path, backup)
         try:
             open(path, "w", encoding="utf-8").write(mangled)
             with contextlib.redirect_stdout(io.StringIO()):
                 s = run_all()
         finally:
-            shutil.move(backup, path)
+            # 用内存里的原文覆盖恢复，不依赖临时文件是否还在。
+            # 早先用 shutil.move 恢复过一次失败，把被破坏的源码留在了
+            # 工作区里——这类事故会静静改坏产品代码，比测试失败严重。
+            open(path, "w", encoding="utf-8").write(orig)
+            restore_ok = open(path, encoding="utf-8").read() == orig
+        if not restore_ok:
+            # 不在 finally 里 return: 那会吞掉异常, 真正的错误就看不见了
+            print("  严重: 恢复失败, 请立即检查 " + str(path))
+            return 1
         caught = s["failed"] > 0
         all_caught = all_caught and caught
         print(f"  [{'抓到' if caught else '漏掉'}] {name}")

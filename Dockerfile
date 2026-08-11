@@ -1,13 +1,16 @@
 # psi-agent-auth
 #
-# 当前用标准库 http.server（这个开发环境没有 FastAPI/uvicorn/aiohttp）。
-# 方案文档要求 aiohttp + anyio，替换 app/server.py 即可，service.py 与
+# HTTP 层已按方案文档改为 aiohttp + anyio（server.py）；service.py 与
 # store.py 不动 —— 契约测试是传输无关的，换实现后同一套测试仍然适用。
+# 依赖仅 aiohttp + anyio（其余全是标准库），见 requirements.txt。
 
 FROM python:3.12-slim
 
-# 不装编译工具链：当前依赖全是标准库
 WORKDIR /app
+
+# 先装依赖（利用层缓存：requirements 不变时不重装）
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY . /app
 
