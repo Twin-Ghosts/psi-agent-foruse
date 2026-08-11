@@ -24,10 +24,14 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/papaparse": "^5.3.16",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.4",
+    "jsdom": "^27.4.0",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"
