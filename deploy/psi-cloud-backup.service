@@ -1,0 +1,9 @@
+[Unit]
+Description=psi-cloud SQLite hot backup
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/srv/psi-cloud/deploy/backup.sh
+StandardOutput=journal
+StandardError=journal

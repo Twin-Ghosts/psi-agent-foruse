@@ -1,0 +1,31 @@
+[project]
+name = "psi-cloud"
+version = "0.1.0"
+description = "psi-agent 云端服务:认证 + 埋点"
+requires-python = ">=3.14"
+# 版本不在此锁定。实际解析结果见 requirements.lock(由镜像构建产物反填)
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "pydantic-settings",
+    "httpx",
+    "anyio",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "respx", "ruff"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/psi_cloud"]
+
+[tool.ruff]
+line-length = 88
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

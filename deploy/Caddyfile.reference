@@ -1,0 +1,26 @@
+# 这是 /etc/caddy/Caddyfile 中与 psi-cloud 相关的片段,存此仅作参考。
+# 真实生效的配置在 /etc/caddy/Caddyfile(宿主机),** 不由容器管理 **:
+# 容器删除后 Caddy 照常运行,这两个 vhost 变 502,配置本身不受影响。
+
+account.genuineknowledge.cn {
+	# 自动签 Let's Encrypt 证书。80 会自动 301 到 443。
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# 埋点上报
+	handle /api/events {
+		reverse_proxy 127.0.0.1:8082
+	}
+
+	# 认证服务
+	handle {
+		reverse_proxy 127.0.0.1:8081
+	}
+}

@@ -1,0 +1,74 @@
+# 两个服务共用一个镜像,靠 command 区分 entrypoint。
+#
+# 解耦要点:Caddy 不在此文件中 —— 它原生跑在宿主机上,配置在
+# /etc/caddy/Caddyfile。`docker compose down --rmi all -v` 之后
+# Caddy 照常运行、静态站照常服务,两个 vhost 变 502,数据与配置都还在。
+
+services:
+  auth:
+    build: .
+    image: psi-cloud:latest
+    container_name: psi-auth
+    restart: unless-stopped
+    command:
+      - uvicorn
+      - psi_cloud.auth.app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --forwarded-allow-ips
+      - "*"
+    environment:
+      AUTH_DB_PATH: /data/auth.db
+      AUTH_LOG_LEVEL: ${AUTH_LOG_LEVEL:-INFO}
+      AUTH_SMS_PROVIDER: ${AUTH_SMS_PROVIDER:-mock}
+      AUTH_EMAIL_PROVIDER: ${AUTH_EMAIL_PROVIDER:-mock}
+      AUTH_INVITATION_REQUIRED: ${AUTH_INVITATION_REQUIRED:-false}
+      AUTH_CODE_HASH_SALT: ${AUTH_CODE_HASH_SALT:?must be set}
+      AUTH_ALIYUN_ACCESS_KEY_ID: ${AUTH_ALIYUN_ACCESS_KEY_ID:-}
+      AUTH_ALIYUN_ACCESS_KEY_SECRET: ${AUTH_ALIYUN_ACCESS_KEY_SECRET:-}
+      AUTH_ALIYUN_SMS_SIGN_NAME: ${AUTH_ALIYUN_SMS_SIGN_NAME:-}
+      AUTH_ALIYUN_SMS_TEMPLATE_CODE: ${AUTH_ALIYUN_SMS_TEMPLATE_CODE:-}
+      AUTH_RESEND_API_KEY: ${AUTH_RESEND_API_KEY:-}
+      AUTH_RESEND_FROM: ${AUTH_RESEND_FROM:-}
+      AUTH_HTTP_TRUST_ENV: ${AUTH_HTTP_TRUST_ENV:-false}
+    volumes:
+      - ./data/auth:/data
+    ports:
+      - "127.0.0.1:8081:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://127.0.0.1:8000/healthz\", timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  analytics:
+    build: .
+    image: psi-cloud:latest
+    container_name: psi-analytics
+    restart: unless-stopped
+    command:
+      - uvicorn
+      - psi_cloud.analytics.app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --forwarded-allow-ips
+      - "*"
+    environment:
+      ANALYTICS_DB_PATH: /data/analytics.db
+      ANALYTICS_LOG_LEVEL: ${ANALYTICS_LOG_LEVEL:-INFO}
+      ANALYTICS_ALLOW_ORIGINS: ${ANALYTICS_ALLOW_ORIGINS:-*}
+    volumes:
+      - ./data/analytics:/data
+    ports:
+      - "127.0.0.1:8082:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://127.0.0.1:8000/healthz\", timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
