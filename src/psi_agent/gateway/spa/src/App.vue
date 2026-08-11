@@ -1,0 +1,570 @@
+<template>
+  <div id="root-layout">
+    <div v-if="loadingEnv" class="page-loader">
+      <div class="spinner"></div>
+      <p>Initializing System Environment...</p>
+    </div>
+
+    <div class="mobile-overlay" :class="{ active: isMobileSidebarOpen }" @click="ui.closeMobileSidebar"></div>
+
+    <Sidebar @new-session="handleNewSession" @open-workspace="openWorkspacePicker" />
+
+    <div
+      id="chat"
+      ref="chatDropRef"
+    >
+      <div v-if="isDragging" class="drop-overlay">
+        <div class="drop-overlay-inner">
+          <span class="material-symbols-outlined">upload_file</span>
+          <span>拖放文件以上传</span>
+        </div>
+      </div>
+      <div id="mobile-topbar">
+        <div class="topbar-left">
+          <button class="topbar-btn" @click="toggleSidebar" title="打开会话列表">
+            <span class="material-symbols-outlined">menu</span>
+          </button>
+        </div>
+        <div class="topbar-title">{{ currentSessionTitle }}</div>
+        <div class="topbar-right">
+          <button class="topbar-btn" @click="toggleTheme" :title="isLightMode ? '切换至暗色模式' : '切换至亮色模式'">
+            <span class="material-symbols-outlined">{{ isLightMode ? 'dark_mode' : 'light_mode' }}</span>
+          </button>
+          <UserHub compact />
+        </div>
+      </div>
+
+      <div id="topbar">
+        <button class="tb-btn" @click="toggleSidebar" :title="isSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'">
+          <span class="material-symbols-outlined">{{ (isSidebarCollapsed && !isMobileSidebarOpen) ? 'menu' : 'left_panel_close' }}</span>
+        </button>
+        <div class="tb-spacer"></div>
+        <button class="tb-btn" @click="toggleTheme" :title="isLightMode ? '切换至暗色模式' : '切换至亮色模式'">
+          <span class="material-symbols-outlined">{{ isLightMode ? 'dark_mode' : 'light_mode' }}</span>
+        </button>
+        <UserHub />
+      </div>
+
+      <div
+        id="chat-main"
+        :class="{
+          onboarding: mainView === MainView.NO_WORKSPACE || mainView === MainView.NO_SESSION,
+          welcome: mainView === MainView.CHAT && messages.length === 0,
+        }"
+      >
+        <NoWorkspaceView
+          v-if="mainView === MainView.NO_WORKSPACE"
+          @open-workspace="openWorkspacePicker"
+        />
+        <NoSessionView
+          v-else-if="mainView === MainView.NO_SESSION"
+          @new-session="handleNewSession()"
+        />
+        <template v-else-if="mainView === MainView.CHAT">
+          <div v-if="messages.length === 0" class="welcome-hero" key="welcome">
+            <div class="welcome-greeting">{{ greetingText }}</div>
+          </div>
+          <ChatArea v-else key="chat" />
+          <InputBar
+            @select-backend="selectBackend"
+            @delete-ai="confirmDeleteAI"
+            @delete-router="confirmDeleteRouter"
+          />
+        </template>
+      </div>
+    </div>
+
+    <AiDialog @create="createAI" @fetchModels="fetchAvailableModels" />
+    <RouterDialog :show="dlgRouter" @close="dlgRouter = false" @connect-ai="openAiFromRouter" @submit="createRouter" />
+    <PathPickerDialog />
+    <ConfirmDialog @confirm="executeConfirmedAction" />
+    <Snackbar />
+  </div>
+</template>
+
+<script setup>
+import { computed, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useBreakpoints, useDropZone, useStorage, useEventListener } from '@vueuse/core'
+import { useAiStore } from './stores/ai.js'
+import { useSessionStore } from './stores/session.js'
+import { useRouterStore } from './stores/router.js'
+import { useChatStore } from './stores/chat.js'
+import { useUiStore } from './stores/ui.js'
+import { api } from './api.js'
+import {
+  saveActiveState,
+  loadActiveState,
+  clearHistory,
+} from './utils.js'
+import { PROVIDERS } from './providers.js'
+import { useTheme } from './composables/useTheme.js'
+import { useKeyboard } from './composables/useKeyboard.js'
+import { useMainView } from './composables/useMainView.js'
+import {
+  selectSession,
+  selectWorkspace,
+  clearSessionLocalState,
+  startDraftChat,
+  discardDraft,
+} from './composables/useSession.js'
+import { openPathPicker } from './composables/usePathPicker.js'
+import {
+  getSessionDisplayName,
+  getWorkspaceLabel,
+  normalizeWorkspacePath,
+  PLACEHOLDER_SESSION_TITLE,
+  sessionsForWorkspace,
+} from './sessionList.js'
+import { matchSidebarShortcut } from './shortcuts.js'
+import { ensureDefaultAi } from './bootstrapAi.js'
+import Sidebar from './components/Sidebar.vue'
+import ChatArea from './components/ChatArea.vue'
+import InputBar from './components/InputBar.vue'
+import NoWorkspaceView from './components/NoWorkspaceView.vue'
+import NoSessionView from './components/NoSessionView.vue'
+import AiDialog from './components/AiDialog.vue'
+import RouterDialog from './components/RouterDialog.vue'
+import PathPickerDialog from './components/PathPickerDialog.vue'
+import ConfirmDialog from './components/ConfirmDialog.vue'
+import Snackbar from './components/Snackbar.vue'
+import UserHub from './components/UserHub.vue'
+import { LS_USER_NAME } from './userProfile.js'
+
+const LS_SIDEBAR = 'gw-sidebar-state'
+const sidebarState = useStorage(LS_SIDEBAR, 'expanded')
+
+const userName = useStorage(LS_USER_NAME, '')
+const greetingText = computed(() =>
+  userName.value ? `${userName.value}，你说，我在听！` : '你好，有什么可以帮你？'
+)
+
+const ai = useAiStore()
+const { ais, selectedAiId, aiForm, fetchedModels, loadingModels } = storeToRefs(ai)
+const router = useRouterStore()
+const { routers } = storeToRefs(router)
+
+const session = useSessionStore()
+const { sessions, selectedSessionId, selectedBackendType, selectedBackendId, draftSession, sessionTitles, selectedWorkspacePath, gatewayCwd } = storeToRefs(session)
+
+const chat = useChatStore()
+const { messages, selectedFiles } = storeToRefs(chat)
+
+const ui = useUiStore()
+const { loadingEnv, isLightMode, isDragging, dlgAI, dlgRouter, dlgConfirm, isSidebarCollapsed, isMobileSidebarOpen } = storeToRefs(ui)
+
+const { mainView, isChatActive, MainView } = useMainView()
+
+const { toggleTheme } = useTheme()
+useKeyboard()
+
+const breakpoints = useBreakpoints({ mobile: 768 })
+const isMobile = breakpoints.smallerOrEqual('mobile')
+
+useEventListener(window, 'keydown', (e) => {
+  const action = matchSidebarShortcut(e)
+  if (!action) return
+  e.preventDefault()
+  if (action === 'new-session') {
+    handleNewSession()
+  } else if (action === 'focus-search') {
+    if (isMobile.value) {
+      isMobileSidebarOpen.value = true
+    } else {
+      isSidebarCollapsed.value = false
+    }
+    ui.focusSessionSearch()
+  }
+})
+
+function toggleSidebar() {
+  ui.toggleSidebar(isMobile.value)
+}
+
+const chatDropRef = ref(null)
+const { isOverDropZone } = useDropZone(chatDropRef, {
+  onDrop: (files) => {
+    if (!isChatActive.value) return
+    if (files && files.length) selectedFiles.value.push(...files)
+  },
+})
+watch(isOverDropZone, (over) => {
+  isDragging.value = over && isChatActive.value
+})
+
+async function refreshAIs() {
+  try {
+    ais.value = await api('GET', '/ais')
+  } catch (e) {
+    ais.value = []
+  }
+}
+
+async function refreshSessions() {
+  try {
+    sessions.value = await api('GET', '/sessions')
+  } catch (e) {
+    sessions.value = []
+  }
+  session.syncRegisteredWorkspaces()
+}
+
+async function refreshRouters() {
+  try { routers.value = await api('GET', '/routers') } catch (_) { routers.value = [] }
+}
+
+async function refreshAll() {
+  await refreshAIs()
+  await refreshRouters()
+  await refreshSessions()
+}
+
+function confirmDeleteAI(id) {
+  const a = ais.value.find(a => a.id === id)
+  const name = a ? (a.model || a.id) : id
+  dlgConfirm.value.message = `确认删除大模型「${name}」? 相关会话数据将保留，但该模型链接将无法使用。`
+  dlgConfirm.value.actionType = 'ai'
+  dlgConfirm.value.actionArgs = id
+  dlgConfirm.value.show = true
+}
+
+function confirmDeleteRouter(id) {
+  const item = routers.value.find(r => r.id === id)
+  dlgConfirm.value = {
+    show: true,
+    message: `确认停止路由服务「${item?.name || id}」？`,
+    actionType: 'router',
+    actionArgs: id,
+  }
+}
+
+async function deleteAI(id) {
+  await api('DELETE', '/ais/' + id).catch(() => {})
+  if (selectedAiId.value === id) {
+    selectedAiId.value = null
+    saveActiveState(null, selectedSessionId.value, selectedWorkspacePath.value)
+  }
+  await refreshAll()
+}
+
+
+async function executeConfirmedAction() {
+  dlgConfirm.value.show = false
+
+  const id = dlgConfirm.value.actionArgs
+  if (!id) return
+
+  if (dlgConfirm.value.actionType === 'ai') {
+    await deleteAI(id)
+    return
+  }
+
+  if (dlgConfirm.value.actionType === 'router') {
+    await api('DELETE', '/routers/' + id).catch(() => {})
+    await refreshRouters()
+    return
+  }
+
+  if (dlgConfirm.value.actionType === 'workspace-remove') {
+    session.removeRegisteredWorkspace(id)
+    if (selectedWorkspacePath.value === normalizeWorkspacePath(id)) {
+      await selectWorkspace('')
+    }
+    return
+  }
+
+  if (dlgConfirm.value.actionType === 'workspace') {
+    const wsPath = normalizeWorkspacePath(id)
+    const toDelete = sessionsForWorkspace(sessions.value, wsPath, gatewayCwd.value)
+    for (const s of toDelete) {
+      await api('DELETE', '/sessions/' + s.id).catch(() => {})
+      clearHistory(s.id)
+      clearSessionLocalState(s.id)
+      if (s.id === selectedSessionId.value) {
+        selectedSessionId.value = null
+        messages.value.splice(0)
+        chat.streaming = false
+        chat.abortController = null
+        chat.inputText = ''
+        chat.selectedFiles = []
+      }
+    }
+    if (draftSession.value?.workspace === wsPath) {
+      discardDraft()
+      messages.value.splice(0)
+      chat.inputText = ''
+      chat.selectedFiles = []
+    }
+    session.removeRegisteredWorkspace(wsPath)
+    if (selectedWorkspacePath.value === wsPath) {
+      await selectWorkspace('')
+    }
+    saveActiveState(selectedAiId.value, selectedSessionId.value, selectedWorkspacePath.value)
+    await refreshAll()
+    return
+  }
+
+  await api('DELETE', '/sessions/' + id).catch(() => {})
+  clearHistory(id)
+  clearSessionLocalState(id)
+  if (id === selectedSessionId.value) {
+    selectedSessionId.value = null
+    messages.value.splice(0)
+    chat.streaming = false
+    chat.abortController = null
+    chat.inputText = ''
+    chat.selectedFiles = []
+  }
+  saveActiveState(selectedAiId.value, selectedSessionId.value, selectedWorkspacePath.value)
+  await refreshAll()
+}
+
+function handleProviderChange() {
+  const match = PROVIDERS.find(p => p.v === aiForm.value.provider)
+  if (match) aiForm.value.base_url = match.base
+}
+
+const currentSessionTitle = computed(() => {
+  if (draftSession.value) return PLACEHOLDER_SESSION_TITLE
+  if (selectedSessionId.value) {
+    const sess = sessions.value.find(s => s.id === selectedSessionId.value)
+    if (sess) return getSessionDisplayName(sess, sessionTitles.value)
+  }
+  if (selectedWorkspacePath.value) return getWorkspaceLabel(selectedWorkspacePath.value)
+  return 'HaiTun'
+})
+
+
+async function fetchAvailableModels() {
+  if (!aiForm.value.api_key || !aiForm.value.base_url) {
+    fetchedModels.value = []
+    return
+  }
+  loadingModels.value = true
+  try {
+    const headers = { Authorization: `Bearer ${aiForm.value.api_key}` }
+    if (aiForm.value.provider === 'anthropic') headers['x-api-key'] = aiForm.value.api_key
+    const url = `${aiForm.value.base_url.replace(/\/+$/, '')}/models`
+    const res = await fetch(url, { method: 'GET', headers }).then(r => r.json())
+    if (res && Array.isArray(res.data)) fetchedModels.value = res.data.map(m => m.id)
+    else if (res && Array.isArray(res.models)) fetchedModels.value = res.models.map(m => m.name || m.id)
+    else fetchedModels.value = []
+  } catch (e) {
+    fetchedModels.value = []
+  } finally {
+    loadingModels.value = false
+  }
+}
+
+function openAiDialog() {
+  aiForm.value = { provider: 'deepseek', base_url: 'https://api.deepseek.com/v1', api_key: '', model: '' }
+  fetchedModels.value = []
+  dlgAI.value = true
+}
+
+function openAiFromRouter() {
+  dlgRouter.value = false
+  openAiDialog()
+}
+
+async function openWorkspacePicker() {
+  const path = await openPathPicker({
+    mode: 'directory',
+    title: '打开工作区',
+    confirmLabel: '打开',
+    hint: '选择本地文件夹作为 Agent 工作区，之后可在其下创建多个会话。',
+    initialPath: selectedWorkspacePath.value || gatewayCwd.value,
+  })
+  if (!path) return
+  session.addRegisteredWorkspace(path)
+  session.syncRegisteredWorkspaces()
+  await selectWorkspace(path)
+}
+
+async function handleNewSession(workspacePath) {
+  if (!ais.value.length) {
+    await ensureDefaultAi()
+    await refreshAll()
+    if (!ais.value.length) {
+      ui.showAlert(
+        '默认模型接入失败。请检查网络，或在右上角「大模型」中自行连接',
+      )
+      return
+    }
+    if (!selectedAiId.value && ais.value.length) selectedAiId.value = ais.value[0].id
+  }
+  let path = normalizeWorkspacePath(workspacePath || selectedWorkspacePath.value)
+  if (!path) {
+    await openWorkspacePicker()
+    path = selectedWorkspacePath.value
+    if (!path) return
+  }
+  if (path !== selectedWorkspacePath.value) {
+    await selectWorkspace(path)
+  }
+  session.ensureWorkspaceExpanded(path)
+  await startDraftChat(path)
+}
+
+async function selectBackend({ type, id }) {
+  if (type === selectedBackendType.value && id === selectedBackendId.value) return
+  selectedBackendType.value = type
+  selectedBackendId.value = id
+  if (type === 'ai') selectedAiId.value = id
+  if (draftSession.value) {
+    draftSession.value = { ...draftSession.value, backendType: type, backendId: id, aiId: type === 'ai' ? id : null }
+    return
+  }
+  const current = sessions.value.find(s => s.id === selectedSessionId.value)
+  if (!current) return
+  await api('DELETE', '/sessions/' + selectedSessionId.value).catch(() => {})
+  const recreate = {
+    id: selectedSessionId.value,
+    backend_type: type,
+    backend_id: id,
+    workspace: current.workspace,
+  }
+  if (current.agent) recreate.agent = current.agent
+  await api('POST', '/sessions', recreate)
+  await refreshSessions()
+}
+
+async function createAI() {
+  if (!aiForm.value.model) {
+    ui.showAlert('请选择或输入模型名称')
+    return
+  }
+  try {
+    const info = await api('POST', '/ais', {
+      provider: aiForm.value.provider,
+      model: aiForm.value.model,
+      api_key: aiForm.value.api_key,
+      base_url: aiForm.value.base_url,
+    })
+    selectedAiId.value = info.id
+    selectedBackendType.value = 'ai'
+    selectedBackendId.value = info.id
+    dlgAI.value = false
+    await refreshAll()
+    loadingEnv.value = false
+    saveActiveState(selectedAiId.value, selectedSessionId.value, selectedWorkspacePath.value)
+    if (sessions.value.length === 0 && !session.registeredWorkspaces.length) {
+      await openWorkspacePicker()
+    } else if (!selectedWorkspacePath.value && session.registeredWorkspaces.length) {
+      await selectWorkspace(session.registeredWorkspaces[0])
+    }
+  } catch (e) {
+    ui.showAlert(e.message)
+  }
+}
+
+async function createRouter(payload) {
+  try {
+    await api('POST', '/routers', payload)
+    await refreshRouters()
+    router.resetRouterForm()
+    dlgRouter.value = false
+    ui.showAlert('路由服务已启动')
+  } catch (e) {
+    ui.showAlert(e.message || '路由服务启动失败')
+  }
+}
+
+if (sidebarState.value === 'collapsed') isSidebarCollapsed.value = true
+
+watch(
+  isSidebarCollapsed,
+  (v) => {
+    sidebarState.value = v ? 'collapsed' : 'expanded'
+  }
+)
+
+onMounted(async () => {
+  sessionTitles.value = await api('GET', '/titles').catch(() => ({}))
+
+  try {
+    try {
+      const cwdInfo = await api('GET', '/workspace/cwd')
+      gatewayCwd.value = cwdInfo.cwd || ''
+    } catch (_) {
+      gatewayCwd.value = ''
+    }
+
+    await refreshAll()
+
+    if (ais.value.length === 0) {
+      await ensureDefaultAi()
+      await refreshAll()
+    }
+
+    if (ais.value.length === 0) {
+      loadingEnv.value = false
+      ui.openHubPanel('models')
+      return
+    }
+
+    const activeState = loadActiveState()
+    if (activeState.aiId && ais.value.some(a => a.id === activeState.aiId))
+      selectedAiId.value = activeState.aiId
+    if (!selectedAiId.value && ais.value.length) selectedAiId.value = ais.value[0].id
+    if (!selectedBackendId.value && selectedAiId.value) selectedBackendId.value = selectedAiId.value
+
+    if (activeState.workspacePath) {
+      session.setSelectedWorkspace(activeState.workspacePath)
+    }
+
+    const persisted = activeState.sessId && sessions.value.some(s => s.id === activeState.sessId)
+      ? activeState.sessId
+      : null
+    if (persisted) {
+      await selectSession(persisted)
+    } else if (activeState.sessId) {
+      saveActiveState(selectedAiId.value, null, selectedWorkspacePath.value)
+    } else if (selectedWorkspacePath.value) {
+      await selectWorkspace(selectedWorkspacePath.value)
+    } else if (session.registeredWorkspaces.length) {
+      await selectWorkspace(session.registeredWorkspaces[0])
+    }
+
+    loadingEnv.value = false
+    ui.openHubPanel('models')
+  } catch (err) {
+    loadingEnv.value = false
+    ui.openHubPanel('models')
+  }
+})
+</script>
+
+<style scoped>
+#topbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; flex-shrink: 0;
+}
+#topbar .tb-spacer { flex: 1; }
+#topbar .tb-btn {
+  width: 40px; height: 40px; border: none; background: transparent;
+  color: var(--md-text-secondary); border-radius: var(--md-shape-full);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background 0.2s;
+}
+#topbar .tb-btn:hover { background: var(--md-surface-container-high); }
+@media (max-width: 768px) { #topbar { display: none; } }
+
+#chat-main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#chat-main.onboarding,
+#chat-main.welcome {
+  justify-content: center; align-items: center; gap: 40px;
+  background: var(--g-welcome-glow);
+}
+#chat-main.welcome .welcome-hero { display: flex; justify-content: center; }
+.welcome-greeting {
+  font-size: 52px; font-weight: 500; letter-spacing: -1px;
+  background: var(--g-grad-hello);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+#chat-main.welcome :deep(#input-wrapper) { padding-bottom: 0; width: 100%; }
+@media (max-width: 768px) {
+  .welcome-greeting { font-size: 34px; }
+}
+</style>

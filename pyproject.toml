@@ -1,0 +1,110 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "psi-agent"
+dynamic = ["version"]
+description = "A microkernel-style agent framework"
+readme = "README.md"
+authors = [{name = "Hao Zhang", email = "hzhangxyz@outlook.com"}]
+license = {text = "MIT"}
+requires-python = ">=3.14"
+dependencies = [
+    "anyio>=4.14.2",
+    "aiohttp>=3.14.1",
+    "loguru>=0.7.3",
+    "tyro>=1.0.15",
+    "croniter>=6.2.4",
+    "pyyaml>=6.0.3",
+    "prompt-toolkit>=3.0.52",
+    "rich>=15.0.0",
+    "any-llm-sdk>=1.21.0",
+    "platformdirs>=4.10.1",
+    "lark-channel-sdk>=1.2.0",
+    "python-telegram-bot[socks]>=22.8",
+    "mcp>=1.28.1",
+    "serper-mcp-server>=0.0.10",
+    "pystray>=0.19.5",
+    "pillow>=12.3.0",
+    "pymupdf>=1.28.0",
+    "python-docx>=1.2.0",
+    "python-pptx>=1.0.2",
+    "openpyxl>=3.1.5",
+    "readability-lxml>=0.8.4.1",
+    "markdownify>=1.2.3",
+    "pywebview>=6.2.1",
+    # 登录凭证加密存储。缺它时 gateway/_auth_store.py 会降级到明文落盘并告警,
+    # 不会崩 —— 正因为不崩, 漏声明就是「静默不满足 R4(凭证不明文落盘)」, 必须显式声明。
+    "keyring>=25.0.0",
+    "pygount>=3.2.0",
+    "hikari>=2.5.0",
+    "matplotlib>=3.11.0",
+    "antlr4-python3-runtime>=4.13.2,<4.14",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.22",
+    "ty>=0.0.61",
+]
+
+[project.scripts]
+psi-agent = "psi_agent.cli:main"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.sdist]
+artifacts = [
+    "src/psi_agent/gateway/spa/dist/**/*",
+    "src/psi_agent/gateway/spa-v2/dist/**/*",
+]
+exclude = [
+    "src/psi_agent/gateway/spa/node_modules/**",
+    "src/psi_agent/gateway/spa-v2/node_modules/**",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/psi_agent"]
+exclude = [
+    "src/psi_agent/**/AGENTS.md",
+    "src/psi_agent/**/.gitignore",
+    "src/psi_agent/gateway/spa",
+    "src/psi_agent/gateway/spa-v2",
+]
+artifacts = [
+    "src/psi_agent/gateway/spa/dist/**/*",
+    "src/psi_agent/gateway/spa-v2/dist/**/*",
+]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 120
+extend-exclude = ["examples/haitun-workspace/skills/workflow/fusion_flow/generated"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "ASYNC", "SIM", "C4", "B", "RUF", "N", "T20", "PLC"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = ["--strict-markers", "-ra", "--cov"]
+markers = ["schedule: schedule-based tests (> 30s)"]
+
+[tool.ty.environment]
+extra-paths = ["examples/haitun-workspace/skills/workflow"]
+
+[tool.ty.src]
+exclude = ["examples/haitun-workspace/skills/workflow/fusion_flow/generated"]
+
+[tool.coverage.run]
+source = ["src/psi_agent"]
