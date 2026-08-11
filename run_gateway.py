@@ -16,7 +16,21 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "psi-agent-full", "src"))
+# 两种布局都要能跑：
+#   交付包            <本文件同级>/src/psi_agent/…
+#   开发工作目录      <本文件同级>/psi-agent-full/src/psi_agent/…
+# 原先只写死后者，于是交付包里 `import psi_agent` 直接 ModuleNotFoundError ——
+# 克隆下来一跑就崩，而崩在 import 阶段、连日志都还没起来。
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _cand in (os.path.join(_HERE, "src"),
+              os.path.join(_HERE, "psi-agent-full", "src")):
+    if os.path.isdir(os.path.join(_cand, "psi_agent")):
+        sys.path.insert(0, _cand)
+        break
+else:
+    raise SystemExit(
+        "找不到 psi_agent 包：期望在 ./src/ 或 ./psi-agent-full/src/ 下。"
+        f"当前目录 {_HERE}")
 
 # Git Bash(MSYS) 会把 "/auth" 这类纯路径值当 Unix 路径，转成
 # "C:/Program Files/Git/auth"。只修正这一种被篡改的情况，**不覆盖用户的正常取值**。
