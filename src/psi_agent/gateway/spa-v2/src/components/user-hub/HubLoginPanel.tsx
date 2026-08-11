@@ -137,6 +137,9 @@ export default function HubLoginPanel({ show, onClose }: Props) {
         setDevices([])
       }
     } catch (e) {
+      // 这里刻意**不**动 status：它可能存着上一次成功探到的值，清掉会让界面
+      // 在一次网络抖动后丢失已知信息。body 选择靠 D3 抢在 status === null
+      // 之前来保证能渲染出错误屏（见下方注释）。
       setFail('D3')
       setError(humanize(e))
     }
@@ -725,8 +728,15 @@ export default function HubLoginPanel({ show, onClose }: Props) {
   }
 
   // ---- body 选择 ----
+  //
+  // **D3 必须排在 status === null 之前。** refresh() 失败时只 setFail('D3')、
+  // 不设 status，所以 status 仍是 null；若先判 null 就永远显示「正在检查登录
+  // 状态…」——转圈转到底，而 renderOffline() 里的「重试」和「暂不登录，继续
+  // 使用」两个出口永远到不了，用户既看不到原因也退不出去。
   let body: React.ReactNode
-  if (status === null) {
+  if (fail === 'D3') {
+    body = renderOffline()
+  } else if (status === null) {
     body = (
       <div className="hub-login-loading">
         <div className="ring" />
@@ -745,8 +755,6 @@ export default function HubLoginPanel({ show, onClose }: Props) {
         </p>
       </>
     )
-  } else if (fail === 'D3') {
-    body = renderOffline()
   } else if (stage === 'done') {
     body = manageDevices ? renderDevices() : renderAccount()
   } else if (stage === 'finishing') {

@@ -285,4 +285,25 @@ describe('屏 D3：无法连接', () => {
     expect(screen.getByRole('button', { name: '重试' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '暂不登录，继续使用' })).toBeTruthy()
   })
+
+  // 回归：首次探测就失败时不能永久转圈。
+  //
+  // refresh() 的 catch 只 setFail('D3')、**不设 status**，所以 status 仍是 null。
+  // body 选择若把 `status === null` 判在 `fail === 'D3'` 之前，界面就永远停在
+  // 「正在检查登录状态…」——转圈转到底，renderOffline() 里的「重试」和
+  // 「暂不登录，继续使用」两个出口一个都点不到，用户既看不到原因也退不出去。
+  // 上面那条用例走的是**发码**失败，进 D3 时 status 已经探到了，遮不住这个次序问题。
+  it('初次探测 /auth/status 就抛错时，显示错误屏而不是一直 loading', async () => {
+    const api = await import('../../services/api')
+    const spy = vi.spyOn(api, 'getAuthStatus').mockRejectedValue(new Error('network down'))
+    try {
+      openPanel()
+      // 必须出现出口按钮；出现「正在检查登录状态…」则说明卡在 loading
+      expect(await screen.findByRole('button', { name: '重试' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: '暂不登录，继续使用' })).toBeTruthy()
+      expect(screen.queryByText('正在检查登录状态…')).toBeNull()
+    } finally {
+      spy.mockRestore()
+    }
+  })
 })
