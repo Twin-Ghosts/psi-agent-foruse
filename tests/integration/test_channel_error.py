@@ -4,6 +4,9 @@ from pathlib import Path
 
 import anyio
 import pytest
+from tests.conftest import requires_unix_socket
+
+pytestmark = requires_unix_socket
 from aiohttp import ClientSession, ClientTimeout, UnixConnector, web
 
 from tests.integration.conftest import read_sse

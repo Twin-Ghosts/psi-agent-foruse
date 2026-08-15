@@ -7,6 +7,7 @@ from pathlib import Path
 
 import anyio
 import pytest
+from tests.conftest import requires_unix_socket
 from aiohttp import ClientSession, ClientTimeout, UnixConnector, web
 
 from psi_agent.session.agent import SessionAgent
@@ -94,6 +95,7 @@ async def test_missing_system_py(mock_ai_server: MockAIServer) -> None:
     assert len(chunks) > 0
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_system_prompt_builder_raises_exception_caught(tmp_path: Path) -> None:
 
@@ -246,6 +248,7 @@ async def test_unicode_message_handling(tmp_path: Path, mock_ai_server: MockAISe
     assert len(content) > 0, "Should receive a response for unicode message"
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_session_with_empty_workspace_uses_cwd(tmp_path: Path, mock_ai_server: MockAIServer) -> None:
     """Session started via CLI without --workspace should use CWD."""

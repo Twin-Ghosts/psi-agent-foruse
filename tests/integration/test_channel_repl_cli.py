@@ -5,6 +5,7 @@ import socket as _sock
 
 import anyio
 import pytest
+from tests.conftest import requires_unix_socket
 from aiohttp import ClientSession, ClientTimeout, web
 
 from tests.integration.conftest import MockAIServer, read_sse
@@ -69,6 +70,7 @@ async def _stop_process(proc) -> None:
         proc.kill()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_channel_receives_content_from_session(tmp_path, mock_ai_server: MockAIServer) -> None:
     """Channel should receive streaming content from session via SSE."""

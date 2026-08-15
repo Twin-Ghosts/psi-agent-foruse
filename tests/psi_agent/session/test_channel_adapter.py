@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import anyio
 import pytest
+from tests.conftest import requires_unix_socket
 from aiohttp import ClientSession, ClientTimeout, UnixConnector, web
 
 from psi_agent.session.agent import SessionAgent
@@ -83,6 +84,7 @@ async def test_write_catches_generic_exception():
     assert "boom" in text
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_handle_request_integration_valid(tmp_path: Path):
     agent = SessionAgent(ai_client=AiClient("http://nonexistent/v1"), tool_registry=ToolRegistry())
@@ -124,6 +126,7 @@ async def test_handle_request_integration_valid(tmp_path: Path):
         await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_handle_request_integration_agent_error(tmp_path: Path):
     agent = SessionAgent(ai_client=AiClient("http://nonexistent/v1"), tool_registry=ToolRegistry())
@@ -165,6 +168,7 @@ async def test_handle_request_integration_agent_error(tmp_path: Path):
         await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_handle_request_integration_invalid_json(tmp_path: Path):
     agent = SessionAgent(ai_client=AiClient("http://nonexistent/v1"), tool_registry=ToolRegistry())
@@ -189,6 +193,7 @@ async def test_handle_request_integration_invalid_json(tmp_path: Path):
         await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_handle_request_integration_non_dict_body(tmp_path: Path):
     """JSON array as body (not an object) -> 400 response."""
@@ -218,6 +223,7 @@ async def test_handle_request_integration_non_dict_body(tmp_path: Path):
         await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_handle_request_integration_empty_messages(tmp_path: Path):
     agent = SessionAgent(ai_client=AiClient("http://nonexistent/v1"), tool_registry=ToolRegistry())
@@ -245,6 +251,7 @@ async def test_handle_request_integration_empty_messages(tmp_path: Path):
         await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_handle_request_integration_generic_exception(tmp_path: Path):
     agent = SessionAgent(ai_client=AiClient("http://nonexistent/v1"), tool_registry=ToolRegistry())
@@ -286,6 +293,7 @@ async def test_handle_request_integration_generic_exception(tmp_path: Path):
         await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_handle_request_integration_messages_not_list(tmp_path: Path):
     """messages field is not a list → 400."""
@@ -315,6 +323,7 @@ async def test_handle_request_integration_messages_not_list(tmp_path: Path):
         await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_handle_request_integration_message_not_dict(tmp_path: Path):
     """Last message is not a dict → coerced to user message, should not crash."""

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import anyio
 import pytest
+from tests.conftest import requires_unix_socket
 from telegram.ext import Application
 
 from psi_agent.channel._types import FileChunk, TextChunk
@@ -63,6 +64,7 @@ def _patch_builder(monkeypatch, app: MagicMock) -> None:
     monkeypatch.setattr(Application, "builder", lambda *a, **k: builder)
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_run_telegram_cleans_up_on_startup_failure(monkeypatch):
     """A startup failure (start_polling) must trigger shielded teardown and re-raise."""
@@ -78,6 +80,7 @@ async def test_run_telegram_cleans_up_on_startup_failure(monkeypatch):
     app.shutdown.assert_awaited()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_run_telegram_cleans_up_on_cancel(monkeypatch):
     """On cancel during polling, teardown must run under a shielded scope."""

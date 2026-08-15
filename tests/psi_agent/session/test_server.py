@@ -8,6 +8,7 @@ from typing import Any
 
 import anyio
 import pytest
+from tests.conftest import requires_unix_socket
 from aiohttp import ClientSession, ClientTimeout, UnixConnector, web
 
 from psi_agent.session.agent import AgentRun, SessionAgent
@@ -32,6 +33,7 @@ class _FailingSessionAgent(SessionAgent):
         raise RuntimeError("boom")
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_handle_invalid_json_body(tmp_path: Path) -> None:
     """When request body is not valid JSON, return 400."""
@@ -59,6 +61,7 @@ async def test_handle_invalid_json_body(tmp_path: Path) -> None:
         await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_handle_empty_messages(tmp_path: Path) -> None:
     """When messages list is empty, return 400."""
@@ -89,6 +92,7 @@ async def test_handle_empty_messages(tmp_path: Path) -> None:
         await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_handle_non_user_role_coercion(tmp_path: Path) -> None:
     """When last message is not user role, it should work without crashing."""
@@ -141,6 +145,7 @@ async def test_handle_non_user_role_coercion(tmp_path: Path) -> None:
         await ai_runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_agent_run_success_flow(tmp_path: Path) -> None:
     """When agent runs successfully, response is streamed correctly."""
@@ -193,6 +198,7 @@ async def test_agent_run_success_flow(tmp_path: Path) -> None:
         await ai_runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_agent_run_raises_produces_error_chunk(tmp_path: Path) -> None:
     """When agent.run() raises mid-stream, the server catches it and sends error chunk."""

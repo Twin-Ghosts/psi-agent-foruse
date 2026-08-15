@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 
 import anyio
 import pytest
+from tests.conftest import requires_unix_socket
 from aiohttp import ClientSession, ClientTimeout, FormData, web
 
 from psi_agent.gateway._ai_manager import AIManager
@@ -410,6 +411,7 @@ async def test_gateway_rest_errors(tmp_path: str) -> None:
         await tg.__aexit__(None, None, None)
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_gateway_chat_sse(tmp_path: str, mock_ai_server: MockAIServer) -> None:
     mock_ai_server.set_responses(
@@ -480,6 +482,7 @@ async def test_gateway_chat_sse(tmp_path: str, mock_ai_server: MockAIServer) -> 
         await tg.__aexit__(None, None, None)
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_gateway_blob_send(tmp_path: str, mock_ai_server: MockAIServer, monkeypatch: pytest.MonkeyPatch) -> None:
     # Inbound blobs land in ~/Downloads/.psi/, so redirect Path.home() to keep

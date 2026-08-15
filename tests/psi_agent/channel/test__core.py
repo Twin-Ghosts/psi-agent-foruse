@@ -6,6 +6,7 @@ from contextlib import aclosing
 import anyio
 import anyio.lowlevel
 import pytest
+from tests.conftest import requires_unix_socket
 from aiohttp import web
 
 from psi_agent.channel._core import ChannelCore
@@ -13,6 +14,7 @@ from psi_agent.channel._errors import ChannelError
 from psi_agent.channel._types import FileChunk, ReasoningChunk, TextChunk
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_channel_core_connect_unix(tmp_path):
     """Core can connect to a Unix socket server."""
@@ -37,6 +39,7 @@ async def test_channel_core_connect_unix(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_converts_file_chunk_to_recv_marker(tmp_path):
     """FileChunk becomes [RECV:path] in the POST body."""
@@ -75,6 +78,7 @@ async def test_post_converts_file_chunk_to_recv_marker(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_sse_buffering_merges_within_interval(tmp_path):
     """SSE chunks within interval are merged into one TextChunk."""
@@ -110,6 +114,7 @@ async def test_post_sse_buffering_merges_within_interval(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_sse_interval_split(tmp_path):
     """SSE chunks arriving after interval expiry yield separate TextChunks."""
@@ -143,6 +148,7 @@ async def test_post_sse_interval_split(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_detects_send_marker(tmp_path):
     """[SEND:/path] in SSE content yields FileChunk."""
@@ -183,6 +189,7 @@ async def test_post_detects_send_marker(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_send_dedup(tmp_path):
     """Same [SEND] path only yields FileChunk once."""
@@ -218,6 +225,7 @@ async def test_post_send_dedup(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_handles_error_chunk(tmp_path):
     """SSE chunk with finish_reason='error' raises."""
@@ -253,6 +261,7 @@ async def test_post_handles_error_chunk(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_non_200_http_error(tmp_path):
     """Non-200 HTTP response raises with error message."""
@@ -278,6 +287,7 @@ async def test_post_non_200_http_error(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_flush_on_stream_end(tmp_path):
     """Residual chunk_buf is flushed when stream ends."""
@@ -312,6 +322,7 @@ async def test_post_flush_on_stream_end(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_rejects_multiple_choices(tmp_path):
     """SSE chunk with >1 choices raises."""
@@ -344,6 +355,7 @@ async def test_post_rejects_multiple_choices(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_send_cross_chunk(tmp_path):
     """[SEND:...] split across SSE chunks is detected."""
@@ -409,6 +421,7 @@ async def test_aexit_closes_session_even_when_cancelled(monkeypatch):
     assert fake.closed
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_reasoning_only(tmp_path):
     """A reasoning-only delta yields a ReasoningChunk."""
@@ -442,6 +455,7 @@ async def test_post_reasoning_only(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_reasoning_then_content_ordered(tmp_path):
     """Type switch flushes reasoning before content, preserving order."""
@@ -478,6 +492,7 @@ async def test_post_reasoning_then_content_ordered(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_reasoning_merges_within_interval(tmp_path):
     """Consecutive reasoning deltas within interval merge into one ReasoningChunk."""
@@ -512,6 +527,7 @@ async def test_post_reasoning_merges_within_interval(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_reasoning_kind_switch_emits_separate_chunks(tmp_path):
     """Different delta.kind must not merge even inside a long interval window."""
@@ -550,6 +566,7 @@ async def test_post_reasoning_kind_switch_emits_separate_chunks(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_send_marker_ignored_in_reasoning(tmp_path):
     """[SEND:...] inside reasoning text does NOT yield a FileChunk."""
@@ -582,6 +599,7 @@ async def test_post_send_marker_ignored_in_reasoning(tmp_path):
     await runner.cleanup()
 
 
+@requires_unix_socket
 @pytest.mark.anyio
 async def test_post_null_delta_does_not_crash(tmp_path):
     """A chunk with delta=null must not crash post() (regression for delta.get on None)."""
