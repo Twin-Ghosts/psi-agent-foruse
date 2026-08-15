@@ -6,12 +6,12 @@ from contextlib import aclosing
 import anyio
 import anyio.lowlevel
 import pytest
-from tests.conftest import requires_unix_socket
 from aiohttp import web
 
 from psi_agent.channel._core import ChannelCore
 from psi_agent.channel._errors import ChannelError
 from psi_agent.channel._types import FileChunk, ReasoningChunk, TextChunk
+from tests.conftest import requires_unix_socket
 
 
 @requires_unix_socket

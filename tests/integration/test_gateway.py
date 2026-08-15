@@ -11,7 +11,6 @@ from unittest.mock import MagicMock
 
 import anyio
 import pytest
-from tests.conftest import requires_unix_socket
 from aiohttp import ClientSession, ClientTimeout, FormData, web
 
 from psi_agent.gateway._ai_manager import AIManager
@@ -20,6 +19,7 @@ from psi_agent.gateway._router_manager import RouterManager
 from psi_agent.gateway._session_manager import SessionManager
 from psi_agent.gateway._title_manager import TitleManager
 from psi_agent.gateway.server import create_app
+from tests.conftest import requires_unix_socket
 from tests.integration.conftest import MockAIServer
 
 

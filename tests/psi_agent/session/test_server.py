@@ -8,7 +8,6 @@ from typing import Any
 
 import anyio
 import pytest
-from tests.conftest import requires_unix_socket
 from aiohttp import ClientSession, ClientTimeout, UnixConnector, web
 
 from psi_agent.session.agent import AgentRun, SessionAgent
@@ -16,6 +15,7 @@ from psi_agent.session.ai_client import AiClient
 from psi_agent.session.protocol import AgentChunk
 from psi_agent.session.server import serve_session
 from psi_agent.session.tool_registry import ToolRegistry
+from tests.conftest import requires_unix_socket
 
 
 class _FailingSessionAgent(SessionAgent):

@@ -5,12 +5,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import anyio
 import pytest
-from tests.conftest import requires_unix_socket
 from telegram.ext import Application
 
 from psi_agent.channel._types import FileChunk, TextChunk
 from psi_agent.channel.telegram import ChannelTelegram, client
 from psi_agent.channel.telegram.client import _allowed, _build_chunks, _handle_message, _send_file, run_telegram
+from tests.conftest import requires_unix_socket
 
 
 def test_channel_telegram_defaults():

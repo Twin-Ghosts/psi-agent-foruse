@@ -6,12 +6,12 @@ from pathlib import Path
 
 import anyio
 import pytest
-from tests.conftest import requires_unix_socket
-
-pytestmark = requires_unix_socket
 from aiohttp import ClientSession, ClientTimeout, UnixConnector, web
 
+from tests.conftest import requires_unix_socket
 from tests.integration.conftest import MockAIServer, read_sse
+
+pytestmark = requires_unix_socket
 
 
 async def _send_async(socket_path: str, message: str) -> int:

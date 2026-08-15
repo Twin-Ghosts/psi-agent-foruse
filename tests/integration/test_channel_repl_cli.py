@@ -5,9 +5,9 @@ import socket as _sock
 
 import anyio
 import pytest
-from tests.conftest import requires_unix_socket
 from aiohttp import ClientSession, ClientTimeout, web
 
+from tests.conftest import requires_unix_socket
 from tests.integration.conftest import MockAIServer, read_sse
 
 

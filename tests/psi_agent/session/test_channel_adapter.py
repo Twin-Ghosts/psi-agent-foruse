@@ -7,7 +7,6 @@ from typing import Any, cast
 
 import anyio
 import pytest
-from tests.conftest import requires_unix_socket
 from aiohttp import ClientSession, ClientTimeout, UnixConnector, web
 
 from psi_agent.session.agent import SessionAgent
@@ -15,6 +14,7 @@ from psi_agent.session.ai_client import AiClient
 from psi_agent.session.channel_adapter import ChannelAdapter
 from psi_agent.session.protocol import AgentChunk, AgentError
 from psi_agent.session.tool_registry import ToolRegistry
+from tests.conftest import requires_unix_socket
 
 
 class _MockResponse(web.StreamResponse):
