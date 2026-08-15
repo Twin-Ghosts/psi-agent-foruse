@@ -11,6 +11,7 @@ import anyio
 from aiohttp import web
 from loguru import logger
 
+from psi_agent.channel._errors import ChannelError
 from psi_agent.gateway._ai_manager import AIManager
 from psi_agent.gateway._attention import AttentionHub
 from psi_agent.gateway._auth_manager import AuthManager
@@ -54,9 +55,26 @@ async def _write_chat_sse_with_keepalive(
     send, recv = anyio.create_memory_object_stream[dict[str, Any]](64)
 
     async def pump() -> None:
+        # 上游模型错误(如 key 失效返回 401)会经 iter_sse_events 抛成
+        # ChannelError。若让它穿透这个 task group,会变成 "unhandled errors
+        # in a TaskGroup" 掐断 SSE 流 —— 浏览器读流中断,前端只看到含糊的
+        # "fail to fetch"。这里把它转成一个干净的 error 事件送给前端,让流
+        # 正常结束、错误明确可读。ConnectionResetError 是客户端主动断开
+        # (如按停止),不当作错误上报。
         async with send, aclosing(chunks) as stream:
-            async for chunk in stream:
-                await send.send(chunk)
+            try:
+                async for chunk in stream:
+                    await send.send(chunk)
+            except ConnectionResetError:
+                logger.info(f"Chat client disconnected for session {session_id!r}")
+            except ChannelError as e:
+                logger.warning(f"Chat upstream error for session {session_id!r}: {e}")
+                with suppress(Exception):
+                    await send.send({"type": "error", "error": str(e)})
+            except Exception as e:
+                logger.error(f"Chat pump error for session {session_id!r}: {e!r}")
+                with suppress(Exception):
+                    await send.send({"type": "error", "error": f"[Session Error: {e}]"})
 
     async with anyio.create_task_group() as tg:
         tg.start_soon(pump)
