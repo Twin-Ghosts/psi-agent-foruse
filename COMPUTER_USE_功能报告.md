@@ -110,6 +110,33 @@
 
 ---
 
+## 四点五、ty 跨平台修正（本轮补做）
+
+初版报告的“ty check 全过”是在 **Windows 本机**跑出的结果，未在 Linux/CI 平台验证——
+这是夸大，特此更正。在 Linux 上 `ty check .` 曾报 16 个诊断：
+
+- **10 个 `ctypes.windll` 无此成员**（`test_real_mouse_control.py`）：Windows 原生 API，
+  ty 在 Linux 把平台推断为 linux 故报错；与报告里 `os.killpg` 同类的平台误报（方向相反）。
+- **5 个 `Cannot resolve .base/.mac/.win`**（`_platforms/`）：`_platforms` 是工具注册器
+  运行时注入 `sys.path` 后动态 import 的私有包，ty 静态解析不了其相对导入（非条件导入，
+  是顶层相对导入）。
+- **1 个 unused `# ty: ignore`**（`base.py`）：某个为压 Windows 告警加的 ignore 在 Linux
+  上因对应告警不触发而变“多余”——跨平台 ty 的固有张力。
+
+**修法（跨平台稳妥，不散布平台相关 ignore）：**
+- `base.py`：用 `assert argv is not None` 收窄类型，**移除两处 `# ty: ignore`**（`setup`
+  这个唯一 None 值在前面已处理），根除 unused-ignore 死结。
+- `pyproject.toml [tool.ty.src] exclude`：新增
+  `examples/haitun-workspace/tools/_platforms`（动态私有包，行为由 dispatcher 测试覆盖）
+  与 `tests/integration/test_real_mouse_control.py`（Windows 原生 ctypes，运行时 skipif
+  已限定 Windows）。exclude 与平台无关，两平台一致生效。
+
+**验证边界（诚实）：** Windows 本机 `ty check .` 改后仅剩 2 个 `os.killpg`（`run_flow.py`，
+非本轮改动、Linux 上不报）。那 15 个 Linux 专属诊断我**无法在 Windows 本机实跑确认清零**，
+用 exclude 从配置层保证；需在 Linux worktree 重跑 `ty check .` 最终证实。
+
+---
+
 ## 五、提交清单（相对 origin/main）
 
 ```

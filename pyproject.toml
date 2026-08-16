@@ -108,7 +108,16 @@ markers = ["schedule: schedule-based tests (> 30s)"]
 extra-paths = ["examples/haitun-workspace/skills/workflow"]
 
 [tool.ty.src]
-exclude = ["examples/haitun-workspace/skills/workflow/fusion_flow/generated"]
+exclude = [
+    "examples/haitun-workspace/skills/workflow/fusion_flow/generated",
+    # computer_use 的私有运行时包：由工具注册器在运行时注入 sys.path 后动态 import，
+    # 不是静态可解析的包，ty 无法解析其相对导入(.base/.mac/.win)。行为由
+    # tests/integration/test_computer_use_dispatcher.py 覆盖。
+    "examples/haitun-workspace/tools/_platforms",
+    # 真机鼠标测试：Windows 原生 ctypes.windll API，在非 Windows 平台静态检查无意义
+    # (且运行时 skipif 已限定 Windows)。
+    "tests/integration/test_real_mouse_control.py",
+]
 
 [tool.coverage.run]
 source = ["src/psi_agent"]

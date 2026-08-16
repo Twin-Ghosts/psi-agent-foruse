@@ -187,8 +187,11 @@ class Backend:
             _code, text_out = await self.run(["describe", tool.strip()])
             return text_out or f"[Error] Could not describe tool {tool!r}."
         if action in _SUBCOMMANDS:
-            _code, text_out = await self.run(_SUBCOMMANDS[action])  # ty: ignore
-            return text_out or f"[Error] `{_BIN} {' '.join(_SUBCOMMANDS[action])}` produced no output."  # ty: ignore
+            argv = _SUBCOMMANDS[action]
+            # ``setup`` (the only None value) is handled above, so argv is a list here.
+            assert argv is not None
+            _code, text_out = await self.run(argv)
+            return text_out or f"[Error] `{_BIN} {' '.join(argv)}` produced no output."
 
         if action == "wait":
             await anyio.sleep(max(0.0, seconds))
