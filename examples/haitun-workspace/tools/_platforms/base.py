@@ -30,9 +30,38 @@ from typing import ClassVar
 
 import anyio
 
-# cua-driver binary name (the installer puts it on PATH: ~/.local/bin on
-# macOS/Linux, %LOCALAPPDATA% shims on Windows). We only rely on it being on PATH.
-_BIN = "cua-driver"
+# cua-driver binary name. The installer adds it to the User PATH, but a
+# long-running host process (e.g. the gateway started before install, or from a
+# shell whose PATH wasn't refreshed) won't see that update. So we resolve the
+# real executable: PATH first, then the known per-OS install locations. This is
+# why computer_use could wrongly report "cua-driver CLI not found" even when it
+# was installed — the host's PATH simply hadn't picked up the installer's entry.
+_BIN_NAME = "cua-driver"
+
+
+def _resolve_bin() -> str:
+    """Locate the cua-driver executable: PATH, then known install dirs."""
+    found = shutil.which(_BIN_NAME)
+    if found:
+        return found
+    home = os.path.expanduser("~")
+    localappdata = os.environ.get("LOCALAPPDATA", os.path.join(home, "AppData", "Local"))
+    candidates = [
+        # Windows installer shim + packaged current release.
+        os.path.join(localappdata, "Programs", "Cua", "cua-driver", "bin", "cua-driver.exe"),
+        os.path.join(home, ".cua-driver", "packages", "current", "cua-driver.exe"),
+        # macOS / Linux.
+        os.path.join(home, ".local", "bin", "cua-driver"),
+        "/usr/local/bin/cua-driver",
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return _BIN_NAME  # fall back to bare name (will fail preflight with a clear hint)
+
+
+# Resolved once at import; still just the bare name if nothing is found.
+_BIN = _resolve_bin()
 
 # Official install guide (per-OS one-line installer). Subclasses build the exact
 # command; this doc URL is shared.
@@ -77,9 +106,11 @@ class Backend:
     # -------------------------------------------------------------- preflight
     def preflight(self) -> str | None:
         """Return an error string if cua-driver can't be used here, else None."""
-        if shutil.which(_BIN) is None:
-            return f"[Error] `{_BIN}` CLI not found.\n{self.install_hint()}"
-        return None
+        # _BIN is an absolute path when resolved from a known install dir, or the
+        # bare name if only found on PATH / not found at all.
+        if os.path.isfile(_BIN) or shutil.which(_BIN):
+            return None
+        return f"[Error] `{_BIN_NAME}` CLI not found.\n{self.install_hint()}"
 
     # -------------------------------------------------------------------- run
     async def run(self, args: list[str], *, timeout_seconds: int = 120) -> tuple[int, str]:
