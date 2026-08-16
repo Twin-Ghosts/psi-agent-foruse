@@ -98,6 +98,14 @@ async def computer_use(
       - scroll: ``direction`` up/down/left/right, ``amount``, at ``element``/``coordinate``.
       - drag: from ``from_element``/``from_coordinate`` to ``to_element``/``to_coordinate``.
       - focus_app / list_apps: focus (``raise_window`` stays False unless asked) or enumerate apps.
+      - browser_* (drive WEB-PAGE elements via CDP; needs the browser started with a
+        remote-debugging port — gateway ``--browser-debug-port``):
+          browser_prepare (attach a browser pid; pass ``args='{"pid":1234}'`` or
+            ``args='{"allow_launch":true,...}'``), get_browser_state (read tabs/refs),
+          browser_navigate (``args='{"url":"..."}'``),
+          browser_click (click a page ref ``args='{"ref":"..."}'`` or viewport ``coordinate``),
+          browser_type (``text`` into a ref), browser_pointer (hover/scroll/drag).
+        Only ``coordinate``/``text`` are auto-passed; everything else (pid/ref/url) via ``args``.
       - wait: sleep ``seconds``.
       - call: escape hatch — invoke MCP ``tool`` with raw JSON ``args`` verbatim.
       - list_tools / describe (``tool``) / doctor / permissions / version / setup: diagnostics.

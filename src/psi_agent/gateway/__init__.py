@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
+import shutil
 import socket
+import subprocess
+import tempfile
 import webbrowser
 from dataclasses import dataclass
 
@@ -39,6 +42,48 @@ def _random_port() -> int:
         s.close()
 
 
+def _find_chromium_browser() -> str | None:
+    """Locate an Edge/Chrome executable for debug-port launch, else None."""
+    candidates = [
+        os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
+        os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
+        os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+        os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    for name in ("msedge", "chrome"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def _open_browser_with_debug(addr: str, port: int) -> None:
+    """Open *addr* in Edge/Chrome with a remote-debugging port for CDP control.
+
+    Falls back to ``webbrowser.open`` if no Chromium browser is found. Uses a
+    dedicated user-data-dir so the debug port is stable and does not disturb the
+    user's main profile windows.
+    """
+    exe = _find_chromium_browser()
+    if not exe:
+        logger.warning("browser_debug_port set but no Edge/Chrome found; falling back to default browser")
+        webbrowser.open(addr)
+        return
+    user_data = os.path.join(tempfile.gettempdir(), f"haitun-cdp-{port}")
+    logger.warning(
+        f"Launching browser with remote-debugging-port={port} (CDP). "
+        f"SECURITY: any local process can now drive this browser while it runs."
+    )
+    subprocess.Popen(
+        [exe, f"--remote-debugging-port={port}", f"--user-data-dir={user_data}", addr],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 @dataclass
 class Gateway:
     """Start the gateway REST + Web UI server."""
@@ -60,6 +105,18 @@ class Gateway:
 
     webview: bool = False
     """Use a native webview window instead of the system browser."""
+
+    browser_debug_port: int = 0
+    """Open the browser (--browser) with a Chromium remote-debugging port.
+
+    0 (default) = off: plain ``webbrowser.open`` (no debug port), matches prior
+    behavior. When > 0, launch Edge/Chrome with
+    ``--remote-debugging-port=<port>`` so a desktop-automation agent (cua-driver)
+    can attach to this exact page over CDP and drive web elements.
+
+    SECURITY: a live remote-debugging port lets ANY local process drive this
+    browser. Only enable it deliberately; the gateway logs a warning when set.
+    """
 
     tray: bool = False
     """Show a system tray icon (requires --icon)."""
@@ -337,7 +394,12 @@ class Gateway:
                         logger.warning(f"Failed to start webview window: {e!r}")
 
                 if self.browser:
-                    await anyio.to_thread.run_sync(webbrowser.open, addr)  # ty: ignore
+                    if self.browser_debug_port > 0:
+                        await anyio.to_thread.run_sync(  # ty: ignore
+                            _open_browser_with_debug, addr, self.browser_debug_port
+                        )
+                    else:
+                        await anyio.to_thread.run_sync(webbrowser.open, addr)  # ty: ignore
 
                 tray = None
                 if self.tray:

@@ -181,35 +181,50 @@ class Backend:
         # Tools whose schema rejects unknown fields — send only what they accept.
         _capture_tools = {"get_desktop_state", "get_accessibility_tree"}
 
+        # Browser (CDP) tools drive web-page elements, not desktop windows. Their
+        # schemas differ from desktop input tools and reject desktop-only fields
+        # (element/keys/direction/from_*/modifiers/app). We only pass the few web
+        # concepts (coordinate for a viewport point, text for typing); everything
+        # else (pid, ref, url, …) travels through ``args`` verbatim. cua-driver
+        # 0.20 browser tools: browser_navigate / browser_click / browser_type /
+        # browser_pointer / browser_prepare / get_browser_state.
+        is_browser = tool_name.startswith("browser_") or tool_name == "get_browser_state"
+
         payload: dict[str, object] = {}
-        if app.strip() and tool_name not in _capture_tools:
-            payload["app"] = app.strip()
-        if element is not None:
-            payload["element"] = element
-        if coordinate:
-            payload["coordinate"] = coordinate
-        if text:
-            payload["text"] = text
-        if keys.strip():
-            payload["keys"] = keys.strip()
-        if direction.strip():
-            payload["direction"] = direction.strip()
-        if amount:
-            payload["amount"] = amount
-        if from_element is not None:
-            payload["from_element"] = from_element
-        if to_element is not None:
-            payload["to_element"] = to_element
-        if from_coordinate:
-            payload["from_coordinate"] = from_coordinate
-        if to_coordinate:
-            payload["to_coordinate"] = to_coordinate
-        if modifiers:
-            payload["modifiers"] = modifiers
-        if action == "focus_app":
-            payload["raise_window"] = raise_window
-        if capture_after and action != "capture":
-            payload["capture_after"] = True
+        if is_browser:
+            if coordinate:
+                payload["coordinate"] = coordinate
+            if text:
+                payload["text"] = text
+        else:
+            if app.strip() and tool_name not in _capture_tools:
+                payload["app"] = app.strip()
+            if element is not None:
+                payload["element"] = element
+            if coordinate:
+                payload["coordinate"] = coordinate
+            if text:
+                payload["text"] = text
+            if keys.strip():
+                payload["keys"] = keys.strip()
+            if direction.strip():
+                payload["direction"] = direction.strip()
+            if amount:
+                payload["amount"] = amount
+            if from_element is not None:
+                payload["from_element"] = from_element
+            if to_element is not None:
+                payload["to_element"] = to_element
+            if from_coordinate:
+                payload["from_coordinate"] = from_coordinate
+            if to_coordinate:
+                payload["to_coordinate"] = to_coordinate
+            if modifiers:
+                payload["modifiers"] = modifiers
+            if action == "focus_app":
+                payload["raise_window"] = raise_window
+            if capture_after and action != "capture":
+                payload["capture_after"] = True
 
         try:
             payload = self.merge_args(payload, args)
@@ -220,7 +235,7 @@ class Backend:
 
         # A screenshot comes back as an image content block; extract it to a file.
         # capture (unless ax-only) and any action with capture_after produce one.
-        wants_image = capture_after or (action == "capture" and (mode.strip() or "som") != "ax")
+        wants_image = not is_browser and (capture_after or (action == "capture" and (mode.strip() or "som") != "ax"))
         shot_path = ""
         if wants_image:
             shot_dir = anyio.Path(_SHOT_DIR)

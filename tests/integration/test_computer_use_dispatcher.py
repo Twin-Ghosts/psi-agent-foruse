@@ -132,6 +132,46 @@ async def test_capture_som_attaches_screenshot_out_file(new_mod: Any, plat: Any)
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    "action", ["browser_click", "browser_navigate", "browser_type", "browser_pointer", "get_browser_state"]
+)
+async def test_browser_actions_pass_through(new_mod: Any, plat: Any, action: str) -> None:
+    """browser_* actions dispatch as ``call <action>`` with args passed verbatim."""
+    captured = _mock_backend(plat)
+    await new_mod.computer_use(action=action, args='{"pid":1234,"ref":"e5"}')
+    assert captured, f"{action}: no call produced"
+    argv = captured[0]
+    assert argv[0] == "call"
+    assert argv[1] == action
+    payload = json.loads(argv[2])
+    # args passed verbatim
+    assert payload.get("pid") == 1234
+    assert payload.get("ref") == "e5"
+
+
+@pytest.mark.anyio
+async def test_browser_action_omits_desktop_only_fields(new_mod: Any, plat: Any) -> None:
+    """Desktop-only fields (element/keys/app/modifiers) must NOT go to browser tools."""
+    captured = _mock_backend(plat)
+    # Pass desktop-ish params; they should be dropped for a browser_ tool.
+    await new_mod.computer_use(action="browser_click", element=7, keys="cmd+s", app="Edge", coordinate=[10, 20])
+    payload = json.loads(captured[0][2])
+    assert "element" not in payload
+    assert "keys" not in payload
+    assert "app" not in payload
+    # web-relevant coordinate is kept
+    assert payload.get("coordinate") == [10, 20]
+
+
+@pytest.mark.anyio
+async def test_browser_action_no_screenshot_flag(new_mod: Any, plat: Any) -> None:
+    """browser_* never attaches --screenshot-out-file even with capture_after."""
+    captured = _mock_backend(plat)
+    await new_mod.computer_use(action="browser_click", args='{"ref":"e1"}', capture_after=True)
+    assert "--screenshot-out-file" not in captured[0]
+
+
+@pytest.mark.anyio
 async def test_capture_ax_has_no_screenshot_file(new_mod: Any, plat: Any) -> None:
     """ax capture is text-only: no --screenshot-out-file, targets AX tree tool."""
     captured = _mock_backend(plat)
