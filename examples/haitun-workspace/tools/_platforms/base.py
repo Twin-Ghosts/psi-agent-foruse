@@ -165,13 +165,25 @@ class Backend:
 
         # --- Drive / MCP-tool actions (via `cua-driver call <tool> '<json>'`) -
         # Map the friendly action to a cua-driver MCP tool name (overridable by `tool`).
-        tool_name = tool.strip() or ("screenshot" if action == "capture" else action)
+        # cua-driver 0.20 renamed capture tools and dropped the ``mode`` param:
+        #   capture mode=ax          -> get_accessibility_tree (AX/UIA text, no image)
+        #   capture mode=vision|som  -> get_desktop_state       (full-display PNG)
+        # These tools use ``additionalProperties: false``, so we must NOT send
+        # ``mode``/``app`` to them. An explicit ``tool=`` still overrides the mapping.
+        capture_mode = (mode.strip() or "som") if action == "capture" else ""
+        if tool.strip():
+            tool_name = tool.strip()
+        elif action == "capture":
+            tool_name = "get_accessibility_tree" if capture_mode == "ax" else "get_desktop_state"
+        else:
+            tool_name = action
+
+        # Tools whose schema rejects unknown fields — send only what they accept.
+        _capture_tools = {"get_desktop_state", "get_accessibility_tree"}
 
         payload: dict[str, object] = {}
-        if app.strip():
+        if app.strip() and tool_name not in _capture_tools:
             payload["app"] = app.strip()
-        if action == "capture":
-            payload["mode"] = mode.strip() or "som"
         if element is not None:
             payload["element"] = element
         if coordinate:

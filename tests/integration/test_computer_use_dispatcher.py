@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -98,6 +99,45 @@ async def test_dispatch_builds_cua_command(new_mod: Any, plat: Any, label: str, 
     await new_mod.computer_use(**kwargs)
     assert captured, f"{label}: no cua-driver call produced"
     assert captured[0][0] == "call", f"{label}: expected 'call', got {captured[0]!r}"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "mode,expected_tool",
+    [("som", "get_desktop_state"), ("vision", "get_desktop_state"), ("ax", "get_accessibility_tree")],
+)
+async def test_capture_maps_to_cua_020_tools(new_mod: Any, plat: Any, mode: str, expected_tool: str) -> None:
+    """capture maps to cua-driver 0.20 tool names; ``mode``/``app`` are not sent.
+
+    0.20 renamed the capture tools and their schemas use additionalProperties:false,
+    so sending ``mode``/``app`` would be rejected. Regression guard for that fix.
+    """
+    captured = _mock_backend(plat)
+    await new_mod.computer_use(action="capture", mode=mode, app="Finder")
+    assert captured, "capture produced no call"
+    argv = captured[0]
+    assert argv[0] == "call"
+    assert argv[1] == expected_tool, f"mode={mode} expected {expected_tool}, got {argv[1]}"
+    payload = json.loads(argv[2])
+    assert "mode" not in payload, "must not send 'mode' to 0.20 capture tools"
+    assert "app" not in payload, "must not send 'app' to 0.20 capture tools"
+
+
+@pytest.mark.anyio
+async def test_capture_som_attaches_screenshot_out_file(new_mod: Any, plat: Any) -> None:
+    """Non-ax capture requests a PNG via --screenshot-out-file."""
+    captured = _mock_backend(plat)
+    await new_mod.computer_use(action="capture", mode="som")
+    assert "--screenshot-out-file" in captured[0]
+
+
+@pytest.mark.anyio
+async def test_capture_ax_has_no_screenshot_file(new_mod: Any, plat: Any) -> None:
+    """ax capture is text-only: no --screenshot-out-file, targets AX tree tool."""
+    captured = _mock_backend(plat)
+    await new_mod.computer_use(action="capture", mode="ax")
+    assert captured[0][1] == "get_accessibility_tree"
+    assert "--screenshot-out-file" not in captured[0]
 
 
 @pytest.mark.anyio
