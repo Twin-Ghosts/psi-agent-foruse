@@ -110,12 +110,14 @@ extra-paths = ["examples/haitun-workspace/skills/workflow"]
 [tool.ty.src]
 exclude = [
     "examples/haitun-workspace/skills/workflow/fusion_flow/generated",
-    # computer_use 的私有运行时包：由工具注册器在运行时注入 sys.path 后动态 import，
-    # 不是静态可解析的包，ty 无法解析其相对导入(.base/.mac/.win)。行为由
-    # tests/integration/test_computer_use_dispatcher.py 覆盖。
+    # computer_use 私有运行时包：工具注册器运行时注入 sys.path 后动态 import，ty 静态
+    # 解析不了其相对导入(.base/.mac/.win)。用 extra-paths 能让 ty 解析，但会顺带把
+    # haitun-workspace 里其它作者的文件拉进检查、冒出无关诊断，故不采用；改为 exclude。
+    # base.py 已用 assert 移除 # ty:ignore(真修复)，且 Windows 本机单独 ty check
+    # _platforms 为 All checks passed；行为由 test_computer_use_dispatcher.py 覆盖。
     "examples/haitun-workspace/tools/_platforms",
-    # 真机鼠标测试：Windows 原生 ctypes.windll API，在非 Windows 平台静态检查无意义
-    # (且运行时 skipif 已限定 Windows)。
+    # 真机鼠标测试：Windows 原生 ctypes.windll，非 Windows 平台静态检查无意义
+    # (运行时 skipif 已限定 Windows)。
     "tests/integration/test_real_mouse_control.py",
 ]
 
