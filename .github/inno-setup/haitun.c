@@ -519,6 +519,22 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int nShow)
     /* 5. CHERE_INVOKING */
     replace_env(L"CHERE_INVOKING", L"1");
 
+    /* 5.5. redirect TEMP/TMP into the install dir ({app}\temp).
+     *
+     * psi-agent.exe is a PyInstaller onefile: every launch unpacks ~150MB into
+     * %TEMP%. If the system TEMP is on a full system drive (e.g. C:), unpacking
+     * fails with "No space left on device" and the gateway never starts.
+     * Since {app} is chosen by the user at install time (often a data drive),
+     * pointing TEMP there keeps the launcher self-contained and off C:. */
+    {
+        WCHAR temp_dir[512];
+        lstrcpyW(temp_dir, g_dir);
+        lstrcatW(temp_dir, L"\\temp");
+        CreateDirectoryW(temp_dir, NULL);
+        replace_env(L"TEMP", temp_dir);
+        replace_env(L"TMP", temp_dir);
+    }
+
     /* 6. set working directory */
     SetCurrentDirectoryW(g_dir);
 
