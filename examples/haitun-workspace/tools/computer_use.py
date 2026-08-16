@@ -1,90 +1,62 @@
-"""computer_use tool - drive the macOS desktop in the background via ``cua-driver``.
+"""computer_use tool - drive the desktop in the background via ``cua-driver``.
 
-Part of the ``apple`` toolset. Wraps the external `cua-driver
-<https://github.com/trycua/cua>`_ command-line tool, which drives native apps
-through Apple's Accessibility (AX) tree and synthesized input events built on
-the private SkyLight framework — so screenshots, clicks, typing, scrolling and
-drags land on a target app **without moving the user's cursor, stealing
-keyboard focus, or switching Spaces**. Works with any tool-capable model.
+Cross-platform: ``cua-driver`` supports **macOS and Windows** (same CLI, same
+action surface). It drives native apps through each OS's accessibility / input
+layer — on macOS via the Accessibility (AX) tree + the private SkyLight
+framework; on Windows via Win32/UIA with synthetic cursors — so screenshots,
+clicks, typing, scrolling and drags land on a target app **without moving the
+user's cursor, stealing keyboard focus, or switching Spaces/desktops**. Works
+with any tool-capable model.
+
+This file is a **thin dispatcher**: the public ``computer_use(...)`` action
+surface below is unchanged, but the runtime lives in the private ``_platforms``
+package. ``_platforms.get_backend()`` picks a backend by ``sys.platform``
+(``MacBackend`` / ``WinBackend``) and the friendly action is forwarded verbatim
+to ``Backend.dispatch``. The registry never scans ``_platforms`` (non-recursive
+``*.py`` glob that also skips ``_`` names), so it stays a private runtime, not a
+second tool.
+
+Note: this tool operates the desktop of **the machine cua-driver runs on** (i.e.
+the machine hosting this agent). To drive a *different* user's computer, see
+``computer_use_remote`` (HTTP → agent on the user's box). For a dependency-light
+local alternative that uses ``pyautogui`` instead of cua-driver, see
+``computer_use_local``.
 
 ``cua-driver`` is an external app + CLI (installed via the one-line installer,
-not a Python package), so this tool shells out to it with
-:func:`anyio.run_process` rather than importing a library — no extra
-dependency is added. Every action maps to ``cua-driver call <tool> '<json>'``,
-the same handler the driver's MCP server uses; diagnostic actions use the
-driver's own subcommands (``doctor``, ``permissions``, ``list-tools``,
-``describe``).
+not a Python package), so the backend shells out to it with
+:func:`anyio.run_process` rather than importing a library — no extra dependency
+is added. Every drive action maps to ``cua-driver call <tool> '<json>'``, the
+same handler the driver's MCP server uses; diagnostic actions use the driver's
+own subcommands (``doctor``, ``permissions``, ``list-tools``, ``describe``).
 
-Screenshots come back as PNG bytes; this tool writes them under
+Screenshots come back as PNG bytes; the backend writes them under
 ``generated/computer_use/`` and returns the absolute path so the caller can
 deliver it with a ``MEDIA:`` / ``[SEND:]`` marker.
 """
 
 from __future__ import annotations
 
-import json
-import os
-import shutil
-import time
+import sys
+from pathlib import Path
 
-import anyio
+# The private runtime package (_platforms) sits next to this file. Tool files are
+# exec'd as standalone modules, so make the tools dir importable, then import the
+# platform selector. Mirrors the _feishu / _c_drive_cleanup_impl pattern.
+_TOOLS_DIR = Path(__file__).resolve().parent
+if str(_TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TOOLS_DIR))
 
-# cua-driver binary name (symlinked to ~/.local/bin/cua-driver by the installer).
-_BIN = "cua-driver"
+from _platforms import get_backend  # noqa: E402
 
-# One-line installer, printed by action="setup" (we never run it automatically:
-# it is a networked, system-wide install and needs the user's consent).
-_INSTALL_HINT = (
-    "Install cua-driver, then grant permissions:\n"
-    '  /bin/bash -c "$(curl -fsSL '
-    'https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/scripts/install.sh)"\n'
-    "  cua-driver permissions grant   # approve Accessibility + Screen Recording\n"
-    "  cua-driver doctor              # verify the install"
-)
+# Back-compat: some callers/tests reference the module-level install hint string.
+# Resolve it lazily-ish from the current platform's backend where possible; fall
+# back to the shared doc pointer if the platform is unsupported here.
+try:
+    _INSTALL_HINT = get_backend().install_hint()
+except Exception:  # unsupported platform — keep import side effects harmless
+    from _platforms import INSTALL_DOC
 
-# Real cua-driver subcommands (not MCP tools invoked through ``call``).
-_SUBCOMMANDS = {
-    "setup": None,
-    "doctor": ["doctor"],
-    "permissions": ["permissions", "status"],
-    "list_tools": ["list-tools"],
-    "version": ["--version"],
-}
-
-# Where captured PNGs are written (relative to the workspace cwd, git-ignored).
-_SHOT_DIR = os.path.join("generated", "computer_use")
-
-
-def _preflight() -> str | None:
-    """Return an error string if cua-driver can't be used here, else None."""
-    if shutil.which(_BIN) is None:
-        return f"[Error] `{_BIN}` CLI not found.\n{_INSTALL_HINT}"
-    return None
-
-
-async def _run(args: list[str], *, timeout_seconds: int = 120) -> tuple[int, str]:
-    """Run ``cua-driver <args>`` and return (returncode, combined stdout+stderr)."""
-    try:
-        with anyio.fail_after(timeout_seconds):
-            result = await anyio.run_process([_BIN, *args], check=False)
-    except TimeoutError:
-        return 124, f"[Error] {_BIN} timed out after {timeout_seconds}s."
-    out = result.stdout.decode("utf-8", errors="replace")
-    err = result.stderr.decode("utf-8", errors="replace")
-    return result.returncode, (out + err).strip()
-
-
-def _merge_args(base: dict[str, object], raw: str) -> dict[str, object]:
-    """Merge a raw JSON overrides string into *base* (raw wins on key clashes)."""
-    if not raw.strip():
-        return base
-    try:
-        extra = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"'args' is not valid JSON: {exc}") from exc
-    if not isinstance(extra, dict):
-        raise ValueError("'args' must be a JSON object, e.g. '{\"pid\": 512}'.")
-    return {**base, **extra}
+    _INSTALL_HINT = f"See the official install guide: {INSTALL_DOC}"
 
 
 async def computer_use(
@@ -108,13 +80,13 @@ async def computer_use(
     seconds: float = 0.0,
     capture_after: bool = False,
 ) -> str:
-    """Drive the macOS desktop in the background through ``cua-driver``.
+    """Drive the desktop (macOS/Windows) in the background through ``cua-driver``.
 
-    Captures and input events target a specific app via its Accessibility tree
-    and do NOT move the user's cursor, steal keyboard focus, or switch Spaces.
-    Typical loop: ``capture`` (mode="som" for a screenshot with numbered element
-    overlays + AX index) → act by ``element`` index → re-``capture`` to verify
-    (or pass ``capture_after=True`` to fold the follow-up screenshot in).
+    Captures and input events target a specific app via its accessibility tree
+    and do NOT move the user's cursor, steal keyboard focus, or switch Spaces/
+    desktops. Typical loop: ``capture`` (mode="som" for a screenshot with numbered
+    element overlays + AX index) → act by ``element`` index → re-``capture`` to
+    verify (or pass ``capture_after=True`` to fold the follow-up screenshot in).
 
     Actions:
       - capture: screenshot the desktop/app. mode="som" (screenshot+overlays+AX
@@ -159,92 +131,29 @@ async def computer_use(
         The driver's JSON/text output, an app/tool listing, or a status/error
         message; for captures, the absolute path of the saved PNG.
     """
-    if err := _preflight():
-        return err
-    action = action.strip().lower()
-
-    # --- Diagnostic subcommands (not MCP tools) ------------------------------
-    if action == "setup":
-        code, text_out = await _run(["doctor"])
-        status = text_out or "(no output)"
-        return f"{_INSTALL_HINT}\n\n--- cua-driver doctor ---\n{status}"
-    if action == "describe":
-        if not tool.strip():
-            return "[Error] describe requires 'tool' (the MCP tool name to inspect)."
-        code, text_out = await _run(["describe", tool.strip()])
-        return text_out or f"[Error] Could not describe tool {tool!r}."
-    if action in _SUBCOMMANDS:
-        code, text_out = await _run(_SUBCOMMANDS[action])  # ty: ignore
-        return text_out or f"[Error] `{_BIN} {' '.join(_SUBCOMMANDS[action])}` produced no output."  # ty: ignore
-
-    if action == "wait":
-        await anyio.sleep(max(0.0, seconds))
-        return f"Waited {max(0.0, seconds)}s."
-
-    # --- Drive / MCP-tool actions (via `cua-driver call <tool> '<json>'`) ----
-    # Map the friendly action to a cua-driver MCP tool name (overridable by `tool`).
-    tool_name = tool.strip() or ("screenshot" if action == "capture" else action)
-
-    payload: dict[str, object] = {}
-    if app.strip():
-        payload["app"] = app.strip()
-    if action == "capture":
-        payload["mode"] = mode.strip() or "som"
-    if element is not None:
-        payload["element"] = element
-    if coordinate:
-        payload["coordinate"] = coordinate
-    if text:
-        payload["text"] = text
-    if keys.strip():
-        payload["keys"] = keys.strip()
-    if direction.strip():
-        payload["direction"] = direction.strip()
-    if amount:
-        payload["amount"] = amount
-    if from_element is not None:
-        payload["from_element"] = from_element
-    if to_element is not None:
-        payload["to_element"] = to_element
-    if from_coordinate:
-        payload["from_coordinate"] = from_coordinate
-    if to_coordinate:
-        payload["to_coordinate"] = to_coordinate
-    if modifiers:
-        payload["modifiers"] = modifiers
-    if action == "focus_app":
-        payload["raise_window"] = raise_window
-    if capture_after and action != "capture":
-        payload["capture_after"] = True
-
     try:
-        payload = _merge_args(payload, args)
-    except ValueError as exc:
+        backend = get_backend()
+    except RuntimeError as exc:
         return f"[Error] {exc}"
 
-    call_args = ["call", tool_name, json.dumps(payload)]
-
-    # A screenshot comes back as an image content block; extract it to a file.
-    # capture (unless ax-only) and any action with capture_after produce one.
-    wants_image = capture_after or (action == "capture" and (mode.strip() or "som") != "ax")
-    shot_path = ""
-    if wants_image:
-        shot_dir = anyio.Path(_SHOT_DIR)
-        await shot_dir.mkdir(parents=True, exist_ok=True)
-        shot_path = str(await (shot_dir / f"shot-{int(time.time() * 1000)}.png").resolve())
-        call_args += ["--screenshot-out-file", shot_path]
-
-    code, out = await _run(call_args)
-
-    if code != 0:
-        detail = out or "(no output)"
-        return (
-            f"[Error] `{_BIN} call {tool_name}` failed (exit {code}): {detail}\n"
-            f"Hint: run action='list_tools' / action='describe' tool='{tool_name}' to check the schema."
-        )
-
-    if shot_path and await anyio.Path(shot_path).exists():
-        note = out.strip()
-        suffix = f"\n{note}" if note else ""
-        return f"Screenshot saved: {shot_path}\nDeliver it to the user with MEDIA:{shot_path}{suffix}"
-    return out or f"{tool_name} ok."
+    return await backend.dispatch(
+        action=action,
+        app=app,
+        mode=mode,
+        tool=tool,
+        args=args,
+        element=element,
+        coordinate=coordinate,
+        text=text,
+        keys=keys,
+        direction=direction,
+        amount=amount,
+        from_element=from_element,
+        to_element=to_element,
+        from_coordinate=from_coordinate,
+        to_coordinate=to_coordinate,
+        modifiers=modifiers,
+        raise_window=raise_window,
+        seconds=seconds,
+        capture_after=capture_after,
+    )

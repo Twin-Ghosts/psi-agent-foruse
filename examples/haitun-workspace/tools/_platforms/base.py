@@ -1,0 +1,232 @@
+"""Backend base class — shared cua-driver runtime for every platform.
+
+This holds the machinery that does not change between macOS and Windows:
+
+- locating / preflighting the ``cua-driver`` CLI,
+- running it (:func:`anyio.run_process`) with a timeout,
+- merging the raw ``args`` JSON override into a call payload,
+- writing screenshots under ``generated/computer_use/``,
+- the diagnostic subcommands (``doctor`` / ``permissions`` / ``list-tools`` /
+  ``describe`` / ``version`` / ``setup``),
+- the shared ``dispatch`` state machine that turns a friendly ``action`` into a
+  ``cua-driver call <tool> '<json>'`` invocation.
+
+Per-platform subclasses (:class:`~_platforms.mac.MacBackend`,
+:class:`~_platforms.win.WinBackend`) only declare their install hint, their
+permission wording, and their capability ledger (``REFUSALS``) — the actual
+action surface presented to the model is identical everywhere.
+
+Nothing here is a tool: the file is private (``_platforms``) and is never scanned
+by the tool registry (non-recursive ``*.py`` glob that also skips ``_`` names).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import time
+from typing import ClassVar
+
+import anyio
+
+# cua-driver binary name (the installer puts it on PATH: ~/.local/bin on
+# macOS/Linux, %LOCALAPPDATA% shims on Windows). We only rely on it being on PATH.
+_BIN = "cua-driver"
+
+# Official install guide (per-OS one-line installer). Subclasses build the exact
+# command; this doc URL is shared.
+INSTALL_DOC = "https://cua.ai/docs/how-to-guides/driver/install"
+
+# Where captured PNGs are written (relative to the workspace cwd, git-ignored).
+_SHOT_DIR = os.path.join("generated", "computer_use")
+
+# Real cua-driver subcommands (not MCP tools invoked through ``call``).
+_SUBCOMMANDS = {
+    "setup": None,
+    "doctor": ["doctor"],
+    "permissions": ["permissions", "status"],
+    "list_tools": ["list-tools"],
+    "version": ["--version"],
+}
+
+
+class Backend:
+    """Shared cua-driver backend. Subclass per OS; override the class attrs below.
+
+    Subclasses set:
+      - ``os_name``   — human name used in hints ("macOS" / "Windows").
+      - ``REFUSALS``  — ``{action: reason}``; a non-empty entry makes ``dispatch``
+        refuse that action on this platform (macOS keeps this empty).
+    """
+
+    os_name: str = ""
+    #: Actions this platform declines, mapped to a user-facing reason. Empty on
+    #: platforms with the full action surface (macOS).
+    REFUSALS: ClassVar[dict[str, str]] = {}
+
+    # ------------------------------------------------------------------ hints
+    def install_hint(self) -> str:
+        """Return an OS-appropriate cua-driver install hint. Override per OS."""
+        return (
+            f"Install cua-driver (guide: {INSTALL_DOC}):\n"
+            f"  See the official install guide: {INSTALL_DOC}\n"
+            "  cua-driver doctor              # verify the install"
+        )
+
+    # -------------------------------------------------------------- preflight
+    def preflight(self) -> str | None:
+        """Return an error string if cua-driver can't be used here, else None."""
+        if shutil.which(_BIN) is None:
+            return f"[Error] `{_BIN}` CLI not found.\n{self.install_hint()}"
+        return None
+
+    # -------------------------------------------------------------------- run
+    async def run(self, args: list[str], *, timeout_seconds: int = 120) -> tuple[int, str]:
+        """Run ``cua-driver <args>`` and return (returncode, combined out+err)."""
+        try:
+            with anyio.fail_after(timeout_seconds):
+                result = await anyio.run_process([_BIN, *args], check=False)
+        except TimeoutError:
+            return 124, f"[Error] {_BIN} timed out after {timeout_seconds}s."
+        out = result.stdout.decode("utf-8", errors="replace")
+        err = result.stderr.decode("utf-8", errors="replace")
+        return result.returncode, (out + err).strip()
+
+    # ------------------------------------------------------------ arg merging
+    @staticmethod
+    def merge_args(base: dict[str, object], raw: str) -> dict[str, object]:
+        """Merge a raw JSON overrides string into *base* (raw wins on clashes)."""
+        if not raw.strip():
+            return base
+        try:
+            extra = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"'args' is not valid JSON: {exc}") from exc
+        if not isinstance(extra, dict):
+            raise ValueError("'args' must be a JSON object, e.g. '{\"pid\": 512}'.")
+        return {**base, **extra}
+
+    # -------------------------------------------------------------- dispatch
+    async def dispatch(
+        self,
+        *,
+        action: str,
+        app: str,
+        mode: str,
+        tool: str,
+        args: str,
+        element: int | None,
+        coordinate: list[int] | None,
+        text: str,
+        keys: str,
+        direction: str,
+        amount: int,
+        from_element: int | None,
+        to_element: int | None,
+        from_coordinate: list[int] | None,
+        to_coordinate: list[int] | None,
+        modifiers: list[str] | None,
+        raise_window: bool,
+        seconds: float,
+        capture_after: bool,
+    ) -> str:
+        """Turn a friendly ``action`` into a cua-driver invocation and return output.
+
+        This is the shared state machine; ``computer_use.py`` forwards its
+        arguments here verbatim. Platform differences live in ``install_hint``
+        and ``REFUSALS`` only.
+        """
+        if err := self.preflight():
+            return err
+        action = action.strip().lower()
+
+        # Capability ledger: refuse actions this platform does not support.
+        if reason := self.REFUSALS.get(action):
+            return f"[Error] action={action!r} is not supported on {self.os_name}: {reason}"
+
+        # --- Diagnostic subcommands (not MCP tools) --------------------------
+        if action == "setup":
+            _code, text_out = await self.run(["doctor"])
+            status = text_out or "(no output)"
+            return f"{self.install_hint()}\n\n--- cua-driver doctor ---\n{status}"
+        if action == "describe":
+            if not tool.strip():
+                return "[Error] describe requires 'tool' (the MCP tool name to inspect)."
+            _code, text_out = await self.run(["describe", tool.strip()])
+            return text_out or f"[Error] Could not describe tool {tool!r}."
+        if action in _SUBCOMMANDS:
+            _code, text_out = await self.run(_SUBCOMMANDS[action])  # ty: ignore
+            return text_out or f"[Error] `{_BIN} {' '.join(_SUBCOMMANDS[action])}` produced no output."  # ty: ignore
+
+        if action == "wait":
+            await anyio.sleep(max(0.0, seconds))
+            return f"Waited {max(0.0, seconds)}s."
+
+        # --- Drive / MCP-tool actions (via `cua-driver call <tool> '<json>'`) -
+        # Map the friendly action to a cua-driver MCP tool name (overridable by `tool`).
+        tool_name = tool.strip() or ("screenshot" if action == "capture" else action)
+
+        payload: dict[str, object] = {}
+        if app.strip():
+            payload["app"] = app.strip()
+        if action == "capture":
+            payload["mode"] = mode.strip() or "som"
+        if element is not None:
+            payload["element"] = element
+        if coordinate:
+            payload["coordinate"] = coordinate
+        if text:
+            payload["text"] = text
+        if keys.strip():
+            payload["keys"] = keys.strip()
+        if direction.strip():
+            payload["direction"] = direction.strip()
+        if amount:
+            payload["amount"] = amount
+        if from_element is not None:
+            payload["from_element"] = from_element
+        if to_element is not None:
+            payload["to_element"] = to_element
+        if from_coordinate:
+            payload["from_coordinate"] = from_coordinate
+        if to_coordinate:
+            payload["to_coordinate"] = to_coordinate
+        if modifiers:
+            payload["modifiers"] = modifiers
+        if action == "focus_app":
+            payload["raise_window"] = raise_window
+        if capture_after and action != "capture":
+            payload["capture_after"] = True
+
+        try:
+            payload = self.merge_args(payload, args)
+        except ValueError as exc:
+            return f"[Error] {exc}"
+
+        call_args = ["call", tool_name, json.dumps(payload)]
+
+        # A screenshot comes back as an image content block; extract it to a file.
+        # capture (unless ax-only) and any action with capture_after produce one.
+        wants_image = capture_after or (action == "capture" and (mode.strip() or "som") != "ax")
+        shot_path = ""
+        if wants_image:
+            shot_dir = anyio.Path(_SHOT_DIR)
+            await shot_dir.mkdir(parents=True, exist_ok=True)
+            shot_path = str(await (shot_dir / f"shot-{int(time.time() * 1000)}.png").resolve())
+            call_args += ["--screenshot-out-file", shot_path]
+
+        code, out = await self.run(call_args)
+
+        if code != 0:
+            detail = out or "(no output)"
+            return (
+                f"[Error] `{_BIN} call {tool_name}` failed (exit {code}): {detail}\n"
+                f"Hint: run action='list_tools' / action='describe' tool='{tool_name}' to check the schema."
+            )
+
+        if shot_path and await anyio.Path(shot_path).exists():
+            note = out.strip()
+            suffix = f"\n{note}" if note else ""
+            return f"Screenshot saved: {shot_path}\nDeliver it to the user with MEDIA:{shot_path}{suffix}"
+        return out or f"{tool_name} ok."
