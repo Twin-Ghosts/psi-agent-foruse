@@ -61,7 +61,7 @@ def _parse_cell_date(raw: str) -> date | None:
         return None
     try:
         return _SERIAL_EPOCH + timedelta(days=int(serial))
-    except (OverflowError, ValueError):
+    except OverflowError, ValueError:
         return None
 
 
@@ -137,9 +137,7 @@ def _normalize_period(raw: str) -> str:
     return ""
 
 
-def _compute_coverage(
-    start: date, end: date, start_period: str, end_period: str
-) -> tuple[list[str], list[str]]:
+def _compute_coverage(start: date, end: date, start_period: str, end_period: str) -> tuple[list[str], list[str]]:
     """按日期+时段推算精确覆盖:返回 (整天的日期列表, 半天的日期列表)。
 
     语义:开始时段=上午 → 首日整天;下午 → 首日半天。结束时段=上午 →
@@ -287,9 +285,7 @@ async def query_leave_impl(
         computed_days = len(full_days) + 0.5 * len(half_days)
         duration_value = cell(row, "duration").strip()
         duration_parsed = _parse_duration(duration_value)
-        duration_mismatch = (
-            duration_parsed is not None and abs(duration_parsed - computed_days) > 0.01
-        )
+        duration_mismatch = duration_parsed is not None and abs(duration_parsed - computed_days) > 0.01
         results.append(
             {
                 "row": row_num,
@@ -300,9 +296,7 @@ async def query_leave_impl(
                 "start_period": _normalize_period(start_period),
                 "end_period": _normalize_period(end_period),
                 # 向后兼容:覆盖采集日且当天整天(旧 SKILL 用);新规则用 covered_* 判周期段。
-                "is_full_day": _is_full_day(
-                    cell(row, "full_day"), cell(row, "duration"), span_days
-                ),
+                "is_full_day": _is_full_day(cell(row, "full_day"), cell(row, "duration"), span_days),
                 # 按日期+时段推算的精确覆盖(权威);时长列仅交叉校验。
                 "covered_full_days": full_days,
                 "covered_half_days": half_days,
