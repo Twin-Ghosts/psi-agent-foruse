@@ -21,3 +21,6 @@ state/
 # See .plan/docs/board-branch-decoupling.md and .kanban/board-ref.
 /.kanban/*
 !/.kanban/board-ref
+
+# local runtime dirs (feishu per-user sessions — contain api_key snapshots)
+feishu-sessions/

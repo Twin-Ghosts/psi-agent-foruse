@@ -985,6 +985,9 @@ from _feishu.drive import (  # noqa: E402,F401
     export_doc_impl,
     get_message_image_impl,
 )
+from _feishu.leave import (  # noqa: E402,F401
+    query_leave_impl,
+)
 from _feishu.message import (  # noqa: E402,F401
     _ANNOUNCEMENT_ERROR_HINTS,
     _AT_TAG_RE,
