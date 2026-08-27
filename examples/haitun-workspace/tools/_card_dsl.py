@@ -108,7 +108,7 @@ _MAX_ROUNDS = 20
 def _parse_round(raw: Any) -> int:
     try:
         return max(0, min(int(raw), _MAX_ROUNDS - 1))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return 0
 
 
@@ -169,11 +169,17 @@ def _score_columns(element: ET.Element, round_: int, context: dict[str, Any]) ->
     max_raw = element.get("max") or "5"
     try:
         lo, hi = int(min_raw), int(max_raw)
-    except ValueError:
-        lo, hi = 1, 5
+    except ValueError as exc:
+        raise ValueError(
+            f"<score> min/max must be integers, got {min_raw!r}/{max_raw!r}"
+        ) from exc
+    if lo > hi:
+        # 不静默纠正:min>max 是模板写错,纠正成 1 个按钮会让「5 到 2 分」看起来
+        # 像「只有 5 分」,把错误藏起来。显式报错,模板作者立刻能看到。
+        raise ValueError(f"<score> min={lo} > max={hi} — swap or fix the range")
+    # 越界 1..9 仍钳制(防呆:max=100 的模板不想整个挂掉),只有 min>max 是
+    # 必然写错,显式报错。
     lo, hi = max(1, lo), min(9, hi)
-    if hi < lo:
-        hi = lo
     selected = _parse_round(element.get("selected") or 0)
     action = (element.get("action") or _DEFAULT_SCORE_ACTION).strip()
     columns: list[dict[str, Any]] = []

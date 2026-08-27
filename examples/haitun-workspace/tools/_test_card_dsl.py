@@ -318,10 +318,13 @@ class TestEdgeFindings(unittest.TestCase):
         cols = next(e for e in out["card"]["body"]["elements"] if e.get("tag") == "column_set")["columns"]
         self.assertEqual(len(cols), 9)  # hi clamped to 9
 
-    def test_score_min_gt_max_collapses(self):
+    def test_score_min_gt_max_errors(self):
+        # Fixed: min>max is a template bug — was silently collapsed to a single
+        # button ("5 to 2" looked like "only 5"), now raised so the author sees it.
         out = _card_dsl.render_card('<card title="x"><score min="5" max="2" bind-record="r"/></card>')
-        cols = next(e for e in out["card"]["body"]["elements"] if e.get("tag") == "column_set")["columns"]
-        self.assertEqual(len(cols), 1)  # hi bumped to lo → single button
+        self.assertFalse(out["ok"])
+        self.assertIn("min", out.get("error", ""))
+        self.assertIn("max", out.get("error", ""))
 
     def test_selected_out_of_range_highlights_nothing(self):
         out = _card_dsl.render_card('<card title="x"><score min="1" max="5" selected="7" bind-record="r"/></card>')
