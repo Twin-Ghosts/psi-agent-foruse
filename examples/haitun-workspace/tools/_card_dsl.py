@@ -102,6 +102,7 @@ _BUILTIN_HANDLERS = {
 
 # 轮次上限:飞书 action 单卡单次消费,每重建一次轮次 +1 生成全新 action,
 # 卡片才能反复操作;预注册 _MAX_ROUNDS 轮(与评价卡实卡验证一致)。
+# 模板可在 <score rounds="N"> 上声明更短的轮次(见 _parse_rounds)。
 _MAX_ROUNDS = 20
 
 
@@ -110,6 +111,24 @@ def _parse_round(raw: Any) -> int:
         return max(0, min(int(raw), _MAX_ROUNDS - 1))
     except TypeError, ValueError:
         return 0
+
+
+def _parse_rounds(raw: Any) -> int:
+    """Parse the ``<score rounds="N">`` attribute — handler pre-registration depth.
+
+    XSD declares ``rounds`` as positiveInteger (default 20). 0 / negative /
+    non-numeric is invalid per XSD, so it falls back to the engine default —
+    over-registering a handler can never break a click, under-registering can
+    (round > depth → no handler → dead button). The cap keeps pre-registration
+    bounded (more rounds than the engine supports is clamped, not honoured).
+    """
+    try:
+        n = int(raw)
+    except TypeError, ValueError:
+        return _MAX_ROUNDS
+    if n < 1:
+        return _MAX_ROUNDS
+    return min(n, _MAX_ROUNDS)
 
 
 # ── Validation ────────────────────────────────────────────────────────────────
@@ -199,12 +218,16 @@ def _score_columns(element: ET.Element, round_: int, context: dict[str, Any]) ->
     return columns
 
 
-def _comment_input(element: ET.Element, round_: int, context: dict[str, Any], index: int = 0) -> dict[str, Any]:
+def _comment_input(
+    element: ET.Element, round_: int, context: dict[str, Any], index: int = 0, occurrence: int = 0
+) -> dict[str, Any]:
     action = (element.get("action") or _DEFAULT_COMMENT_ACTION).strip()
     placeholder = (element.get("placeholder") or "写点评语（可选）").strip()  # noqa: RUF001 (卡片文案使用全角标点)
     comment_value = str(context.get("comment_value") or "")
     value = _base_value(element, f"{action}_r{round_}", 0, round_, context)
-    value["action_id"] = f"{action}_r{round_}"
+    # 同一 action 的第二个 comment 起,把出现序号折进 action_id,回调侧才能区分
+    # 评语来自哪个框(name 已按元素序号唯一,飞书按 name 收值数据不丢,这里补标识)。
+    value["action_id"] = f"{action}_r{round_}" if occurrence == 0 else f"{action}_{occurrence}_r{round_}"
     record_id = str(value.get("record_id") or "r")
     input_el: dict[str, Any] = {
         # confirm 字段让输入框带出「确认」按钮:点确认才把输入文字带回回调
@@ -226,7 +249,7 @@ def _comment_input(element: ET.Element, round_: int, context: dict[str, Any], in
     return input_el
 
 
-def _button_element(element: ET.Element, round_: int, context: dict[str, Any]) -> dict[str, Any]:
+def _button_element(element: ET.Element, round_: int, context: dict[str, Any], occurrence: int = 0) -> dict[str, Any]:
     text = (element.get("text") or "").strip()
     if not text:
         text = "按钮"
@@ -237,7 +260,9 @@ def _button_element(element: ET.Element, round_: int, context: dict[str, Any]) -
     action = (element.get("action") or "").strip()
     if not action:
         raise ValueError("<button> requires an action attribute")
-    action_id = f"{action}_r{round_}"
+    # 同一 action 的按钮重复出现时,把出现序号折进 action_id,回调侧才能区分
+    # 点的是哪个;首次出现保持原名(与既有行为/测试一致)。handler 仍按 action 分发。
+    action_id = f"{action}_r{round_}" if occurrence == 0 else f"{action}_{occurrence}_r{round_}"
     value = _base_value(element, f"{action}_r{round_}", 0, round_, context)
     value["action_id"] = action_id
     return {
@@ -268,6 +293,9 @@ def _compile(
 
     elements: list[dict[str, Any]] = []
     handlers: dict[str, str] = {}
+    # 同一 action 的交互元素重复出现计数:第二次起把序号折进 action_id,
+    # 回调侧才能区分点的是哪个(评论框/按钮同理,见 _comment_input/_button_element)。
+    action_occurrence: dict[str, int] = {}
     for index, child in enumerate(root):
         tag = child.tag
         if tag == "info":
@@ -278,9 +306,12 @@ def _compile(
             elements.append(_markdown_line(label, value))
         elif tag == "score":
             # 轮次预注册:所有轮次的动作名 → 直调工具(六环之"映射")。
+            # 预注册深度取 <score rounds="N">(XSD 声明的属性),缺省回落 _MAX_ROUNDS,
+            # 不再对模板里声明的 rounds 视而不见(模板写 5 就该是 5 轮)。
             action = (child.get("action") or _DEFAULT_SCORE_ACTION).strip()
             handler = _resolve_handler(action, extra_handlers)
-            for r in range(_MAX_ROUNDS):
+            rounds = _parse_rounds(child.get("rounds"))
+            for r in range(rounds):
                 handlers[f"{action}_r{r}"] = handler
             elements.append(
                 {
@@ -296,7 +327,9 @@ def _compile(
             handler = _resolve_handler(action, extra_handlers)
             for r in range(_MAX_ROUNDS):
                 handlers[f"{action}_r{r}"] = handler
-            elements.append(_comment_input(child, round_, context, index))
+            occurrence = action_occurrence.get(action, 0)
+            action_occurrence[action] = occurrence + 1
+            elements.append(_comment_input(child, round_, context, index, occurrence))
         elif tag == "action-row":
             columns: list[dict[str, Any]] = []
             for btn in child:
@@ -312,11 +345,13 @@ def _compile(
                 btn_handler = _resolve_handler(btn_action, extra_handlers)
                 for r in range(_MAX_ROUNDS):
                     handlers[f"{btn_action}_r{r}"] = btn_handler
+                occurrence = action_occurrence.get(btn_action, 0)
+                action_occurrence[btn_action] = occurrence + 1
                 columns.append(
                     {
                         "tag": "column",
                         "width": "auto",
-                        "elements": [_button_element(btn, round_, context)],
+                        "elements": [_button_element(btn, round_, context, occurrence)],
                     }
                 )
             if not columns:
@@ -434,7 +469,12 @@ def _xml_escape(text: str) -> str:
 
 
 def _row_xml(row: dict[str, Any]) -> str:
-    """Serialize one {rows} entry into a <row .../> element with escaped attrs."""
+    """Serialize one {rows} entry into a <row .../> element with escaped attrs.
+
+    键名兼容两套:文档写的 ``bind_record``(模板/调用方视角)与 list 卡编译路径
+    内部用的 ``ledger_record_id``(_build_card_from_state 的状态字段)——两套并存时
+    若只认其一,另一套会被静默忽略,行数据悄悄丢。前者优先,后者兜底。
+    """
     attrs: list[str] = []
     for key, xml_attr in (
         ("title", "title"),
@@ -444,6 +484,8 @@ def _row_xml(row: dict[str, Any]) -> str:
         ("bind_record", "bind-record"),
     ):
         val = row.get(key)
+        if val is None and key == "bind_record":
+            val = row.get("ledger_record_id")
         if val:
             attrs.append(f'{xml_attr}="{_xml_escape(str(val))}"')
     if row.get("done"):
@@ -467,9 +509,7 @@ def _fill_template(xml: str, values: dict[str, Any]) -> str:
     Unknown placeholders are left intact so template bugs stay visible.
     """
     rows = values.get("rows")
-    rows_xml = (
-        "\n".join(_row_xml(r) for r in rows if isinstance(r, dict)) if isinstance(rows, list) else None
-    )
+    rows_xml = "\n".join(_row_xml(r) for r in rows if isinstance(r, dict)) if isinstance(rows, list) else None
     note = str(values.get("note", "") or "").strip()
     note_xml = f'<info label="状态" value="{_xml_escape(note)}"/>' if note else ""
 
@@ -517,6 +557,20 @@ def render_template(
     if not isinstance(values, dict):
         return {"ok": False, "error": "values_json must be a JSON object"}
     filled = _fill_template(xml, dict(values))
+    # 残留占位符 = 模板要求的键没传全。填充后若还有 {key},回调 value 会拿到
+    # 字面量脏值(如 record_id="{record_id}"),点击后拿着假 id 写台账——
+    # 在这里报错,而不是把脏卡发出去。(值里恰好含 {word} 的合法文本会被误报,
+    # 概率极低,且报错可修、脏值静默产错不可修,取前者。)
+    # 模板顶部注释常写「{key} 为占位符」说明文字,那只是文档不是真占位符,
+    # 扫描前剔除 <!-- --> 注释,只检查卡片内容里的残留。
+    body_no_comments = re.sub(r"<!--.*?-->", "", filled, flags=re.DOTALL)
+    leftover = sorted(set(_PLACEHOLDER_RE.findall(body_no_comments)))
+    if leftover:
+        keys = "、".join(f"{{{k}}}" for k in leftover)
+        return {
+            "ok": False,
+            "error": (f"template {name!r} 有未填充的占位符: {keys} —— values_json 缺这些键,不会发出脏卡"),
+        }
     return render_card(
         card_xml=filled,
         context_json=context_json,
@@ -565,8 +619,12 @@ def render_card(
         if isinstance(action, str) and isinstance(handler, str) and action and handler
     }
     try:
-        has_list = any(child.tag == "list" for child in root)
-        if has_list:
+        list_count = sum(1 for child in root if child.tag == "list")
+        if list_count:
+            # 多个 <list> 是 XSD choice(maxOccurs=unbounded)允许的输入,但编译
+            # 路径只取第一个——第二个会静默丢行。数量 != 1 时明确报错,不吞数据。
+            if list_count != 1:
+                raise ValueError(f"<card> 只能有一个 <list>,当前声明了 {list_count} 个")
             # list 卡走 legacy todo-card 路径(多行逐条勾选),复用已验证的行机制;
             # 第一版只支持 <list>(info 等其余元素混用暂不支持,报错而非静默忽略)。
             for child in root:
