@@ -55,6 +55,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import xml.etree.ElementTree as ET
 from typing import Any
 from xml.sax.saxutils import escape
@@ -198,7 +199,7 @@ def _score_columns(element: ET.Element, round_: int, context: dict[str, Any]) ->
     return columns
 
 
-def _comment_input(element: ET.Element, round_: int, context: dict[str, Any]) -> dict[str, Any]:
+def _comment_input(element: ET.Element, round_: int, context: dict[str, Any], index: int = 0) -> dict[str, Any]:
     action = (element.get("action") or _DEFAULT_COMMENT_ACTION).strip()
     placeholder = (element.get("placeholder") or "写点评语（可选）").strip()  # noqa: RUF001 (卡片文案使用全角标点)
     comment_value = str(context.get("comment_value") or "")
@@ -210,7 +211,9 @@ def _comment_input(element: ET.Element, round_: int, context: dict[str, Any]) ->
         # (不带 confirm 的 input 输入后没有任何事件,值收不到)。
         "tag": "input",
         "input_type": "text",
-        "name": f"comment_{record_id}",
+        # index 掺入 name:飞书按 input name 收值,同卡多个 comment 若共用
+        # bind-record 会撞名互相覆盖,加元素序号保证唯一。
+        "name": f"comment_{record_id}_{index}",
         "placeholder": {"tag": "plain_text", "content": placeholder},
         # value 是 input 的初始文本:重建时把上次评语带回输入框,可继续编辑。
         "value": comment_value,
@@ -265,7 +268,7 @@ def _compile(
 
     elements: list[dict[str, Any]] = []
     handlers: dict[str, str] = {}
-    for child in root:
+    for index, child in enumerate(root):
         tag = child.tag
         if tag == "info":
             label = (child.get("label") or "").strip()
@@ -293,14 +296,16 @@ def _compile(
             handler = _resolve_handler(action, extra_handlers)
             for r in range(_MAX_ROUNDS):
                 handlers[f"{action}_r{r}"] = handler
-            elements.append(_comment_input(child, round_, context))
+            elements.append(_comment_input(child, round_, context, index))
         elif tag == "action-row":
             columns: list[dict[str, Any]] = []
             for btn in child:
                 if btn.tag != "button":
                     raise ValueError(f"<action-row> only holds <button>, got <{btn.tag}>")
                 btn_action = (btn.get("action") or "").strip()
-                # 先校验 type 取值,报错指向属性本身而非 handler 缺失。
+                # 先校验属性本身(action 必填、type 取值),报错指向属性而非 handler 缺失。
+                if not btn_action:
+                    raise ValueError("<button> requires an action attribute")
                 type_raw = (btn.get("type") or "default").strip()
                 if type_raw not in _BUTTON_TYPES:
                     raise ValueError(f"<button type={type_raw!r}> unknown — use accept/reject/danger/default/primary")
@@ -314,18 +319,20 @@ def _compile(
                         "elements": [_button_element(btn, round_, context)],
                     }
                 )
-            if columns:
-                elements.append(
-                    {
-                        "tag": "column_set",
-                        "flex_mode": "none",
-                        "horizontal_spacing": "4px",
-                        "background_style": "default",
-                        "columns": columns,
-                    }
-                )
+            if not columns:
+                # 空 action-row 与 XSD(button minOccurs=1)一致地报错,不静默吞掉。
+                raise ValueError("<action-row> requires at least one <button>")
+            elements.append(
+                {
+                    "tag": "column_set",
+                    "flex_mode": "none",
+                    "horizontal_spacing": "4px",
+                    "background_style": "default",
+                    "columns": columns,
+                }
+            )
         else:
-            raise ValueError(f"unknown element <{tag}> — vocabulary: card/info/score/comment/action-row/button")
+            raise ValueError(f"unknown element <{tag}> — vocabulary: info/score/comment/action-row/list under <card>")
 
     card: dict[str, Any] = {
         "schema": "2.0",
@@ -420,7 +427,10 @@ _TEMPLATE_DIR = _resolve_template_dir()
 
 
 def _xml_escape(text: str) -> str:
-    return escape(text)
+    # 所有调用都把结果塞进双引号属性(title="{...}" / value="{...}"),saxutils.escape
+    # 默认只转 < > &,不转引号——值里含 " 会截断属性、破坏整段 XML(标题/人名/评语
+    # 常有引号)。显式把 " 和 ' 也转义,保证填充后的属性始终合法。
+    return escape(text, {'"': "&quot;", "'": "&apos;"})
 
 
 def _row_xml(row: dict[str, Any]) -> str:
@@ -441,23 +451,41 @@ def _row_xml(row: dict[str, Any]) -> str:
     return f"<row {' '.join(attrs)}/>"
 
 
+_PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
+
+
 def _fill_template(xml: str, values: dict[str, Any]) -> str:
-    """Fill {key} placeholders; {rows} expands a list of row dicts; {note} becomes
-    a status info line when non-empty and vanishes otherwise."""
-    filled = xml
-    if isinstance(values.get("rows"), list):
-        rows_xml = "\n".join(_row_xml(r) for r in values["rows"] if isinstance(r, dict))
-        filled = filled.replace("{rows}", rows_xml)
-    note = str(values.pop("note", "") or "").strip()
+    """Fill ``{key}`` placeholders in a single pass.
+
+    ``{rows}`` expands a list of row dicts; ``{note}`` becomes a status info line
+    when non-empty and vanishes otherwise; every other ``{key}`` is replaced by
+    its XML-escaped value. A single-pass ``re.sub`` is used deliberately: the old
+    chained ``str.replace`` re-scanned already-substituted text, so a value that
+    happened to contain ``{another_key}`` would be expanded again (one field
+    could bleed into another). Here each placeholder is resolved exactly once
+    against the original ``values`` and substituted text is never rescanned.
+    Unknown placeholders are left intact so template bugs stay visible.
+    """
+    rows = values.get("rows")
+    rows_xml = (
+        "\n".join(_row_xml(r) for r in rows if isinstance(r, dict)) if isinstance(rows, list) else None
+    )
+    note = str(values.get("note", "") or "").strip()
     note_xml = f'<info label="状态" value="{_xml_escape(note)}"/>' if note else ""
-    filled = filled.replace("{note}", note_xml)
-    for key, val in values.items():
+
+    def _replace(match: re.Match[str]) -> str:
+        key = match.group(1)
         if key == "rows":
-            continue
-        if val is None:
-            val = ""
-        filled = filled.replace("{" + key + "}", _xml_escape(str(val)))
-    return filled
+            return rows_xml if rows_xml is not None else match.group(0)
+        if key == "note":
+            return note_xml
+        if key not in values:
+            # Unknown key: leave the literal placeholder so the gap is obvious.
+            return match.group(0)
+        val = values[key]
+        return _xml_escape("" if val is None else str(val))
+
+    return _PLACEHOLDER_RE.sub(_replace, xml)
 
 
 def render_template(
