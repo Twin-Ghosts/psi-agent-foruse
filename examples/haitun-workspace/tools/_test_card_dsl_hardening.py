@@ -25,11 +25,17 @@ _impl._UNDO_ROUNDS = 20
 _impl._build_card_from_state = lambda state: {"schema": "2.0", "_state": state, "_legacy_state": state}
 _impl._tick_action_id = lambda i, r: f"todo_tick_{i}_r{r}"
 _impl._untick_action_id = lambda i, r: f"todo_untick_{i}_r{r}"
-sys.modules.setdefault("_todo_card_impl", _impl)
+# 收集顺序无关:强制安装本套件的 stub(与其余 stub 套件形状一致),使 _card_dsl
+# 的模块级绑定不依赖 pytest 的导入顺序——否则 strict 套件(真实运行时)先被收集
+# 时,_card_dsl 会绑定真实 _build_card_from_state,本套件对 _state 形状的断言挂掉。
+sys.modules.pop("_todo_card_impl", None)
+sys.modules.pop("_runtime_paths", None)
+sys.modules.pop("_card_dsl", None)
+sys.modules["_todo_card_impl"] = _impl
 
 _paths = types.ModuleType("_runtime_paths")
 _paths.agent_dir = lambda: os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.modules.setdefault("_runtime_paths", _paths)
+sys.modules["_runtime_paths"] = _paths
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _card_dsl  # noqa: E402
@@ -151,7 +157,8 @@ class TestDoneBooleanMatchesXsd(unittest.TestCase):
     def _done(self, literal: str) -> bool:
         out = _card_dsl.render_card(f'<card title="t"><list><row title="r" done="{literal}"/></list></card>')
         self.assertTrue(out["ok"], out.get("error"))
-        return out["card"]["_state"]["rows"][0]["done"]
+        # 真实 todo 卡:done 行只读(零 handler);未完成行有 20 轮 tick 预注册。
+        return not any(k.startswith("todo_tick_0_") for k in out["handlers"])
 
     def test_xsd_true_literals_are_done(self):
         # xs:boolean true set: "true"/"1" (plus common LLM casings tolerated).
@@ -164,7 +171,8 @@ class TestDoneBooleanMatchesXsd(unittest.TestCase):
 
     def test_done_row_is_locked(self):
         out = _card_dsl.render_card('<card title="t"><list><row title="r" done="1"/></list></card>')
-        self.assertTrue(out["card"]["_state"]["rows"][0]["locked"])
+        # locked=done 行发卡即只读:不产生任何 tick/untick handler(卡面无按钮)
+        self.assertFalse(any(k.startswith("todo_") for k in out["handlers"]))
 
 
 # ── 4. Serialization invariant: card + handlers are always JSON-clean ────────
@@ -182,8 +190,11 @@ class TestSerializationInvariant(unittest.TestCase):
         for xml in self.CARDS:
             out = _card_dsl.render_card(xml)
             self.assertTrue(out["ok"], f"{xml[:40]}: {out.get('error')}")
+            # 序列化不变量:card 与 handlers 均 JSON 往返无损。真实 todo 卡顶层
+            # 是 config/header/elements 结构(无 schema 键),普通卡有 schema=2.0,
+            # 统一断言「往返后与原值相等」即覆盖两种形状。
             reloaded = json.loads(json.dumps(out["card"], ensure_ascii=False))
-            self.assertEqual(reloaded["schema"], "2.0")
+            self.assertEqual(reloaded, out["card"])
             # handlers dict is str->str and JSON-clean too
             for k, v in out["handlers"].items():
                 self.assertIsInstance(k, str)

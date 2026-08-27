@@ -133,70 +133,83 @@ class TestRealRuntimeTodoCard(unittest.TestCase):
     """走真实 _todo_card_impl(非 stub):G03「发卡经模板、模板与手写版字节同构」."""
 
     def test_g03_build_todo_card_byte_isomorphic_with_template(self):
-        items = [
-            {
-                "title": "写方案",
-                "task_guid": "g1",
-                "detail": "周五前",
-                "shape": "square",
-                "ledger_record_id": "recA",
-                "link": "https://doc.example/1",
-                "done": False,
-            },
-            {
-                "title": "评审",
-                "task_guid": "g2",
-                "detail": "",
-                "shape": "",
-                "ledger_record_id": "",
-                "link": "",
-                "done": True,
-            },
-            {
-                "title": "归档 🗂",
-                "task_guid": "g3",
-                "detail": '含引号 " 与尖括号 <b>',
-                "shape": "star",
-                "ledger_record_id": "recC",
-                "link": "",
-                "done": False,
-            },
-        ]
-        title, subtitle, shape = "今日 TODO", "2026-08-27 · 三人组", "circle"
-        tok, tbl = "app_tok", "tbl_id"
-        card1, h1 = todo._build_todo_card(
-            items=items,
-            title=title,
-            subtitle=subtitle,
-            shape=shape,
-            ledger_app_token=tok,
-            ledger_table_id=tbl,
-        )
-        rows = [
-            {
-                "title": i.get("title"),
-                "task_guid": i.get("task_guid"),
-                "detail": i.get("detail"),
-                "shape": i.get("shape"),
-                "ledger_record_id": i.get("ledger_record_id"),
-                "link": i.get("link"),
-                "done": i.get("done"),
-            }
-            for i in items
-        ]
-        out2 = dsl.render_template(
-            "todo-card",
-            values_json=json.dumps({"title": title, "rows": rows}, ensure_ascii=False),
-            context_json=json.dumps(
-                {"subtitle": subtitle, "shape": shape, "ledger_app_token": tok, "ledger_table_id": tbl},
-                ensure_ascii=False,
-            ),
-        )
-        self.assertTrue(out2["ok"], out2.get("error"))
-        card2, h2 = out2["card"], out2["handlers"]
-        # 发卡路径与模板直渲必须字节同构(acceptance G03)
-        self.assertEqual(card1, card2)
-        self.assertEqual(h1, h2)
+        # _build_todo_card 函数内延迟 `from _card_dsl import render_template`,取
+        # sys.modules 当前版本。若其它 stub 套件在本文件之后被收集(命令行顺序),
+        # 它们重导的 stub 版 _card_dsl 会覆盖 sys.modules,使本测试拿到 stub 渲染、
+        # 字节不再同构。这里临时钉住本套件的真实 _card_dsl,测完恢复——任意收集
+        # 顺序下 G03 都走真实模板。
+        prev_card_dsl = sys.modules.get("_card_dsl")
+        sys.modules["_card_dsl"] = dsl
+        try:
+            items = [
+                {
+                    "title": "写方案",
+                    "task_guid": "g1",
+                    "detail": "周五前",
+                    "shape": "square",
+                    "ledger_record_id": "recA",
+                    "link": "https://doc.example/1",
+                    "done": False,
+                },
+                {
+                    "title": "评审",
+                    "task_guid": "g2",
+                    "detail": "",
+                    "shape": "",
+                    "ledger_record_id": "",
+                    "link": "",
+                    "done": True,
+                },
+                {
+                    "title": "归档 🗂",
+                    "task_guid": "g3",
+                    "detail": '含引号 " 与尖括号 <b>',
+                    "shape": "star",
+                    "ledger_record_id": "recC",
+                    "link": "",
+                    "done": False,
+                },
+            ]
+            title, subtitle, shape = "今日 TODO", "2026-08-27 · 三人组", "circle"
+            tok, tbl = "app_tok", "tbl_id"
+            card1, h1 = todo._build_todo_card(
+                items=items,
+                title=title,
+                subtitle=subtitle,
+                shape=shape,
+                ledger_app_token=tok,
+                ledger_table_id=tbl,
+            )
+            rows = [
+                {
+                    "title": i.get("title"),
+                    "task_guid": i.get("task_guid"),
+                    "detail": i.get("detail"),
+                    "shape": i.get("shape"),
+                    "ledger_record_id": i.get("ledger_record_id"),
+                    "link": i.get("link"),
+                    "done": i.get("done"),
+                }
+                for i in items
+            ]
+            out2 = dsl.render_template(
+                "todo-card",
+                values_json=json.dumps({"title": title, "rows": rows}, ensure_ascii=False),
+                context_json=json.dumps(
+                    {"subtitle": subtitle, "shape": shape, "ledger_app_token": tok, "ledger_table_id": tbl},
+                    ensure_ascii=False,
+                ),
+            )
+            self.assertTrue(out2["ok"], out2.get("error"))
+            card2, h2 = out2["card"], out2["handlers"]
+            # 发卡路径与模板直渲必须字节同构(acceptance G03)
+            self.assertEqual(card1, card2)
+            self.assertEqual(h1, h2)
+        finally:
+            if prev_card_dsl is None:
+                sys.modules.pop("_card_dsl", None)
+            else:
+                sys.modules["_card_dsl"] = prev_card_dsl
 
     def test_todo_handlers_exact_per_row(self):
         out = dsl.render_template(

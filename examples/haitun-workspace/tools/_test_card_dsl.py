@@ -30,11 +30,16 @@ _stub_impl._UNDO_ROUNDS = 20
 _stub_impl._build_card_from_state = lambda state: {"_state": state, "_legacy_state": state, "schema": "2.0"}
 _stub_impl._tick_action_id = lambda i, r: f"todo_tick_{i}_r{r}"
 _stub_impl._untick_action_id = lambda i, r: f"todo_untick_{i}_r{r}"
-sys.modules.setdefault("_todo_card_impl", _stub_impl)
+# 收集顺序无关:强制安装本套件的 stub(与其余 stub 套件形状一致),使 _card_dsl
+# 的模块级绑定不依赖 pytest 的导入顺序(strict 套件会再 pop 重导真实实现)。
+sys.modules.pop("_todo_card_impl", None)
+sys.modules.pop("_runtime_paths", None)
+sys.modules.pop("_card_dsl", None)
+sys.modules["_todo_card_impl"] = _stub_impl
 
 _stub_paths = types.ModuleType("_runtime_paths")
 _stub_paths.agent_dir = lambda: os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.modules.setdefault("_runtime_paths", _stub_paths)
+sys.modules["_runtime_paths"] = _stub_paths
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _card_dsl  # noqa: E402
