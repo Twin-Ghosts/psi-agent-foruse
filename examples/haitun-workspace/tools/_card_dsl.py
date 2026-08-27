@@ -106,7 +106,9 @@ _BUILTIN_HANDLERS = {
 # 轮次上限:飞书 action 单卡单次消费,每重建一次轮次 +1 生成全新 action,
 # 卡片才能反复操作;预注册 _MAX_ROUNDS 轮(与评价卡实卡验证一致)。
 # 模板可在 <score rounds="N"> 上声明更短的轮次(见 _parse_rounds)。
-_MAX_ROUNDS = 20
+# 单一真源 = _todo_card_impl._UNDO_ROUNDS:三模块共用同一上限,任一处漂移都会
+# 让预注册深度与重建轮次错位(某轮变死键),故不再各写字面量 20,统一取此常量。
+_MAX_ROUNDS = _UNDO_ROUNDS
 
 
 def _parse_round(raw: Any) -> int:
@@ -237,6 +239,10 @@ def _comment_input(
 ) -> dict[str, Any]:
     action = (element.get("action") or _DEFAULT_COMMENT_ACTION).strip()
     placeholder = (element.get("placeholder") or "写点评语（可选）").strip()  # noqa: RUF001 (卡片文案使用全角标点)
+    # confirm 弹窗文案默认按「评价卡评语」措辞;审批卡/其它卡型可用 confirm-title /
+    # confirm-text 覆盖,不再复用评价卡文案(见 T-113 观察:文案与卡能力对不上)。
+    confirm_title = (element.get("confirm-title") or "确认评语").strip()
+    confirm_text = (element.get("confirm-text") or "把这条评语写入台账？").strip()  # noqa: RUF001 (卡片文案使用全角标点)
     comment_value = str(context.get("comment_value") or "")
     value = _base_value(element, f"{action}_r{round_}", 0, round_, context)
     # 同一 action 的第二个 comment 起,把出现序号折进 action_id,回调侧才能区分
@@ -255,8 +261,8 @@ def _comment_input(
         # value 是 input 的初始文本:重建时把上次评语带回输入框,可继续编辑。
         "value": comment_value,
         "confirm": {
-            "title": {"tag": "plain_text", "content": "确认评语"},
-            "text": {"tag": "plain_text", "content": "把这条评语写入台账？"},  # noqa: RUF001 (卡片文案使用全角标点)
+            "title": {"tag": "plain_text", "content": confirm_title},
+            "text": {"tag": "plain_text", "content": confirm_text},
         },
         "behaviors": [{"type": "callback", "value": value}],
     }

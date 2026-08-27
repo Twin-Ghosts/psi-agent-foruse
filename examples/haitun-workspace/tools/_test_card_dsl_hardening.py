@@ -227,6 +227,45 @@ class TestRoutabilityProperty(unittest.TestCase):
                 self.assertEqual(dead, set(), f"{xml[:40]} r{rnd} dead: {dead}")
 
 
+# ── 6. comment confirm 文案可覆盖(默认回退评价卡措辞)────────────────────────
+class TestCommentConfirmText(unittest.TestCase):
+    def _confirm(self, xml: str) -> dict[str, Any]:
+        out = _card_dsl.render_card(xml)
+        self.assertTrue(out["ok"], out.get("error"))
+        for el in out["card"]["body"]["elements"]:
+            if el.get("tag") == "input":
+                return el["confirm"]
+        raise AssertionError("no input element found")
+
+    def test_default_confirm_text_is_review_wording(self):
+        c = self._confirm('<card title="t"><comment bind-record="r"/></card>')
+        self.assertEqual(c["title"]["content"], "确认评语")
+        self.assertIn("写入台账", c["text"]["content"])
+
+    def test_confirm_text_overridable_for_other_card_types(self):
+        # 审批卡自声明文案,不复用评价卡「写入台账」措辞(T-113 观察点)。
+        c = self._confirm(
+            '<card title="t"><comment bind-record="r" '
+            'confirm-title="确认驳回意见" confirm-text="提交这条审批意见?"/></card>'
+        )
+        self.assertEqual(c["title"]["content"], "确认驳回意见")
+        self.assertEqual(c["text"]["content"], "提交这条审批意见?")
+
+    def test_confirm_text_with_quotes_survives_json(self):
+        c = self._confirm(
+            '<card title="t"><comment bind-record="r" confirm-text="写入&quot;台账&quot;?"/></card>'
+        )
+        self.assertEqual(c["text"]["content"], '写入"台账"?')
+
+
+# ── 7. 轮次上限单一真源:_card_dsl 侧与 todo stub 相等(真实三模块一致性由
+#      strict 套件在真实运行时断言,此处只钉 stub 环境可验的 _card_dsl 一侧)──
+class TestMaxRoundsSingleSource(unittest.TestCase):
+    def test_card_dsl_ceiling_sourced_from_undo_rounds(self):
+        # _MAX_ROUNDS = _UNDO_ROUNDS(单一真源);stub 里 _UNDO_ROUNDS=20。
+        self.assertEqual(_card_dsl._MAX_ROUNDS, _impl._UNDO_ROUNDS)
+
+
 if __name__ == "__main__":
     # Run the *whole* module (all TestCase classes), not a hand-picked subset —
     # unittest.main() discovers every class here, so this stays in sync as

@@ -70,6 +70,9 @@
       <xs:attribute name="placeholder" type="xs:string" use="optional"/>
       <xs:attribute name="bind-record" type="xs:string" use="optional"/>
       <xs:attribute name="action" type="xs:string" use="optional"/>
+      <!-- 确认弹窗文案:缺省按「评语」措辞;审批卡等卡型可覆盖,避免复用评价卡文案 -->
+      <xs:attribute name="confirm-title" type="xs:string" use="optional"/>
+      <xs:attribute name="confirm-text" type="xs:string" use="optional"/>
     </xs:complexType>
   </xs:element>
 

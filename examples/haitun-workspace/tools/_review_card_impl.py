@@ -34,11 +34,13 @@ import _feishu_api_impl as _api
 import _feishu_impl as _f
 from _card_dsl import render_template
 from _feishu.bitable import _as_field_map, _build_update_record_request
-from _todo_card_impl import _parse_card_state, _prepare_row_transition
+from _todo_card_impl import _UNDO_ROUNDS, _parse_card_state, _prepare_row_transition
 
 # 每张评价卡最多支持的重建轮数(分数/评语/打回各预注册 _MAX_ROUNDS 个 action)。
 # 点一次分或确认一次评语消耗一轮;20 轮对单条 todo 的评价往返绰绰有余。
-_MAX_ROUNDS = 20
+# 单一真源 = _todo_card_impl._UNDO_ROUNDS:与 _card_dsl 共用同一上限,不再各写 20,
+# 避免三模块常量漂移导致预注册深度与重建轮次错位(见 strict 套件跨模块一致性断言)。
+_MAX_ROUNDS = _UNDO_ROUNDS
 
 # 测试模式:设了该环境变量时,评价卡发给该 open_id(测试者本人)代替真实 mentor,
 # 严禁把评价卡发到真实 mentor 手上。正式运行(海豚一号服务器)不设此变量 → 发真 mentor。
