@@ -98,6 +98,9 @@ _BUILTIN_HANDLERS = {
     _DEFAULT_SCORE_ACTION: "feishu_review_card_select",
     _DEFAULT_COMMENT_ACTION: "feishu_review_input",
     "review_reject": "feishu_review_reject",
+    # 文档示例用 `action="reject"` 表示「打回重做」——reject 是按钮 type 同名的
+    # 语义动作,补成内置别名,文档示例无需 handler_overrides 即可原样编译。
+    "reject": "feishu_review_reject",
 }
 
 # 轮次上限:飞书 action 单卡单次消费,每重建一次轮次 +1 生成全新 action,
@@ -397,7 +400,12 @@ def _compile_list_card(root: ET.Element, context: dict[str, Any]) -> tuple[dict[
     callback tools, zero drift from the hand-written version.
     """
     list_el = next(child for child in root if child.tag == "list")
-    shape_default = (list_el.get("shape") or "circle").strip()
+    # 行默认形状:行级 shape > 卡级 shape(context 注入,发卡工具的参数) >
+    # list 元素属性 > circle。shape 走 context 而不是模板占位符,避免第三方
+    # 渲染不传时把字面量 {shape} 填进属性。
+    shape_default = (
+        str(context.get("shape") or list_el.get("shape") or "circle").strip() or "circle"
+    )
     rows: list[dict[str, Any]] = []
     for row_el in list_el:
         if row_el.tag != "row":
@@ -416,6 +424,7 @@ def _compile_list_card(root: ET.Element, context: dict[str, Any]) -> tuple[dict[
                 "detail": (row_el.get("detail") or "").strip(),
                 "shape": (row_el.get("shape") or shape_default).strip(),
                 "ledger_record_id": (row_el.get("bind-record") or "").strip(),
+                "link": (row_el.get("link") or "").strip(),
                 "done": done,
                 "round": 0,
                 # 发卡时已完成的行走只读(无按钮),与手写版 locked 语义一致。
@@ -424,7 +433,9 @@ def _compile_list_card(root: ET.Element, context: dict[str, Any]) -> tuple[dict[
         )
     state = {
         "title": (root.get("title") or "").strip(),
-        "subtitle": "",
+        # subtitle 是数据不是结构,走 context 注入(发卡工具把副标题放这里,
+        # 与 ledger_app_token/ledger_table_id 同路);模板 XML 不出现 {subtitle}。
+        "subtitle": str(context.get("subtitle") or ""),
         "ledger_app_token": str(context.get("ledger_app_token") or ""),
         "ledger_table_id": str(context.get("ledger_table_id") or ""),
         "rows": rows,
@@ -491,6 +502,7 @@ def _row_xml(row: dict[str, Any]) -> str:
         ("detail", "detail"),
         ("shape", "shape"),
         ("bind_record", "bind-record"),
+        ("link", "link"),
     ):
         val = row.get(key)
         if val is None and key == "bind_record":

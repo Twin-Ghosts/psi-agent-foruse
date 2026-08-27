@@ -244,6 +244,9 @@ async def _handle_score_select(card_action_json: str, user_key: str = "") -> dic
 
     try:
         # 重建走通用 DSL 模板:点分时把输入框当前文本带回,不丢已写评语。
+        # 轮次必须 +1(见 _render_review_card 的 round_ 说明):否则重建后的
+        # 分数按钮 action 名与已消费的相同,再点会被逐 action 墓碑拒绝——
+        # 实卡即「评分选完无法修改」。+1 后每次点分都是全新 action,可改分。
         card, _ = _render_review_card(
             record_id=record_id,
             title=title,
@@ -345,6 +348,8 @@ async def _handle_review_input(card_action_json: str, user_key: str = "") -> dic
     if message_id:
         try:
             # 评语确认后重建:走通用 DSL 模板,把本次提交的评语带回输入框。
+            # 轮次 +1(见 _render_review_card):确认消费了 review_input_r{n},
+            # 重建若停在同轮,输入框的确认按钮将永远点不动。
             rebuilt, _ = _render_review_card(
                 record_id=record_id,
                 title=title,
@@ -529,6 +534,8 @@ async def _handle_review_reject(card_action_json: str, user_key: str = "") -> di
     if message_id:
         try:
             # 打回重建:走通用 DSL 模板,note 渲染成「状态:已打回重做…」信息行。
+            # 轮次 +1(见 _render_review_card):否则打回按钮 action 名与已消费的
+            # 相同,第二次「打回」会被墓碑拦截——实卡即「步骤3无法撤回」。
             rebuilt, _ = _render_review_card(
                 record_id=record_id,
                 title=title,
@@ -615,12 +622,15 @@ def _render_review_card(
     rebuild (score pick / comment confirm / reject) — values fill the card
     body, context fills the callback values. Returns ``(card, handlers)``.
 
-    ``round_`` drives the action-name round suffix (``{action}_r{round}``). The
-    send path renders round 0; every rebuild must pass the *next* round so the
-    new buttons carry fresh action names — otherwise the Channel dedup key
-    ``(message_id, value.action)`` (multi_use tombstone) rejects the second
-    click on the same card as an already-consumed action, silently dropping
-    re-scores / re-confirms.
+    ``round_`` is load-bearing for rebuilds: Feishu consumes each action id
+    once, so a rebuild at the same round would re-emit the already-consumed
+    ``{action}_r{n}`` names and the next click would be tombstone-rejected
+    ("评分选完无法修改"). The send path renders round 0; every rebuild must
+    pass the *next* round (``_round_of_value(value) + 1``) so every button on
+    the rebuilt card gets a fresh, un-consumed action name — otherwise the
+    Channel dedup key ``(message_id, value.action)`` (multi_use tombstone)
+    rejects the second click as already-consumed, silently dropping re-scores
+    / re-confirms / repeat rejects.
     """
     rendered = render_template(
         "review-card",
@@ -648,6 +658,7 @@ def _render_review_card(
             },
             ensure_ascii=False,
         ),
+        round_=round_,
     )
     if not rendered.get("ok"):
         raise RuntimeError(rendered.get("error") or "dsl render failed")

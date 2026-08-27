@@ -5,8 +5,8 @@ Runs without the full psi-agent runtime: the two runtime deps
 validation, the Action six-ring behaviour, template filling and XML escaping
 can all be exercised in isolation.
 
-Run:  PYTHONPATH=. python -m pytest test_card_dsl_standalone.py -q
-  or: PYTHONPATH=. python test_card_dsl_standalone.py
+Run:  python -m pytest _test_card_dsl.py -q   (pytest 已配置 pythonpath)
+  or: python _test_card_dsl.py
 """
 
 from __future__ import annotations
@@ -611,7 +611,7 @@ class TestRebuildSemantics(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    # Must stay at end of file: every TestCase above has to be defined before
-    # unittest.main() runs, or a direct `python _test_card_dsl.py` silently skips
-    # the classes declared later (the 2026-08-27 review's 34-of-64 gap).
+    # 必须放文件末尾:unittest.main() 一执行即跑完退出,放在中间会让
+    # 其后声明的测试类(TestEdgeFindings 等)永远不被执行(D05)。
+    # (2026-08-27 核验报告 34-of-64 gap;需在全部 TestCase 定义之后运行)
     unittest.main(verbosity=2)

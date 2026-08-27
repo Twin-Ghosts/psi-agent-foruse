@@ -235,6 +235,7 @@ def _build_card_from_state(state: dict[str, Any]) -> dict[str, Any]:
             "task_guid": row.get("task_guid"),
             "detail": row.get("detail"),
             "shape": row.get("shape"),
+            "link": row.get("link"),
         }
         if row.get("locked"):
             action = None
@@ -270,28 +271,39 @@ def _build_todo_card(
             "detail": str(item.get("detail") or ""),
             "shape": str(item.get("shape") or shape or _DEFAULT_SHAPE),
             "ledger_record_id": str(item.get("ledger_record_id") or ""),
+            "link": str(item.get("link") or ""),
             "done": bool(item.get("done")),
             "round": 0,
             "locked": bool(item.get("done")),
         }
         for item in items
     ]
-    state = {
-        "title": title,
-        "subtitle": subtitle,
-        "ledger_app_token": ledger_app_token,
-        "ledger_table_id": ledger_table_id,
-        "rows": rows,
-    }
-    card = _build_card_from_state(state)
+    # 发卡走通用 DSL 模板:todo-card.xml 是卡片结构的唯一事实来源(与评价卡
+    # _render_review_card 同一套 render_template 入口),这里的 rows 填充成
+    # <row/> 元素、subtitle/台账坐标走 context 注入,引擎编译出与手写版同构的
+    # 卡片(card_state + 20 轮 tick/untick 预注册)。函数内 import 避免与
+    # _card_dsl 顶层 `from _todo_card_impl import ...` 构成循环依赖。
+    from _card_dsl import render_template  # noqa: PLC0415 (延迟导入破循环)
 
-    handlers: dict[str, str] = {}
-    for index, row in enumerate(rows):
-        if row["done"]:
-            continue
-        for round_ in range(_UNDO_ROUNDS):
-            handlers[_tick_action_id(index, round_)] = "feishu_todo_card_tick"
-            handlers[_untick_action_id(index, round_)] = "feishu_todo_card_untick"
+    rendered = render_template(
+        "todo-card",
+        values_json=json.dumps(
+            {"title": title, "rows": rows},
+            ensure_ascii=False,
+        ),
+        context_json=json.dumps(
+            {
+                "subtitle": subtitle,
+                "shape": shape,
+                "ledger_app_token": ledger_app_token,
+                "ledger_table_id": ledger_table_id,
+            },
+            ensure_ascii=False,
+        ),
+    )
+    if not rendered.get("ok"):
+        raise RuntimeError(rendered.get("error") or "dsl render failed")
+    card, handlers = rendered["card"], rendered["handlers"]
     return card, handlers
 
 

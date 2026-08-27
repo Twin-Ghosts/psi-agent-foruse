@@ -92,7 +92,8 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- 待办行:list 的一行;done="true" 的行发卡时即只读(无按钮) -->
+  <!-- 待办行:list 的一行;done="true" 的行发卡时即只读(无按钮);
+       link 为显式跳转链接(优先于 task-guid 生成的 applink) -->
   <xs:element name="row">
     <xs:complexType>
       <xs:attribute name="title" type="xs:string" use="required"/>
@@ -100,6 +101,7 @@
       <xs:attribute name="detail" type="xs:string" use="optional"/>
       <xs:attribute name="shape" type="xs:string" use="optional"/>
       <xs:attribute name="bind-record" type="xs:string" use="optional"/>
+      <xs:attribute name="link" type="xs:string" use="optional"/>
       <xs:attribute name="done" type="xs:boolean" default="false"/>
     </xs:complexType>
   </xs:element>
