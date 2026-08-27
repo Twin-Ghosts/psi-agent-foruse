@@ -83,6 +83,13 @@ def _install_stubs() -> None:
 
 
 _install_stubs()
+# 合并后 _test_card_dsl_strict 先于本文件收集并已导入真实 _review_card_impl(绑定真实
+# _feishu_impl)。这里必须强制重载:踢掉 sys.modules 里已缓存的 _review_card_impl 再
+# import,让它绑定本文件安装的 stub(_captured edit_card_impl)——否则 handler 里的
+# _f.edit_card_impl 会指向真实飞书网络调用(顺序互扰,单独跑不出现)。
+# 注意:不能动 _card_dsl——strict 套件(真实运行时)的 G03 测试依赖它保持真实,
+# _build_todo_card 在函数内延迟 import 它,执行期再换 stub 版会让 G03 断言错乱。
+sys.modules.pop("_review_card_impl", None)
 import _review_card_impl  # noqa: E402
 
 

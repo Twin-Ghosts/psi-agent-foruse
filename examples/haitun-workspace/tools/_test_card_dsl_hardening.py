@@ -105,10 +105,8 @@ class TestUntrustedXml(unittest.TestCase):
 
     def test_attribute_with_quotes_and_markup_never_breaks_json(self):
         # Values carrying " ' < > & { } must land as data, never as structure.
-        nasty = 'he said "hi" & <b>{record_id}</b> \'x\''
-        out = _card_dsl.render_card(
-            f'<card title="{_card_dsl._xml_escape(nasty)}"><info label="l" value="v"/></card>'
-        )
+        nasty = "he said \"hi\" & <b>{record_id}</b> 'x'"
+        out = _card_dsl.render_card(f'<card title="{_card_dsl._xml_escape(nasty)}"><info label="l" value="v"/></card>')
         self.assertTrue(out["ok"], out.get("error"))
         self.assertEqual(out["card"]["header"]["title"]["content"], nasty)
         blob = json.dumps(out["card"])

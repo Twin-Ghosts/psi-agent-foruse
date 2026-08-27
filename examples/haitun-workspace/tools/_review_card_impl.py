@@ -634,7 +634,6 @@ def _render_review_card(
     """
     rendered = render_template(
         "review-card",
-        round_=round_,
         values_json=json.dumps(
             {
                 "owner_name": owner_name,

@@ -159,9 +159,18 @@ class TestActionSixRings:
             assert all(n.endswith(f"_r{rnd}") for n in names), names
 
     def test_ring2_round_ceiling_is_20(self):
+        # 20 轮可用(0..19);第 21 次重建(round>=20)轮次用尽 → 终态只读卡:
+        # 不再发任何 action(否则动作名与已消费的第 20 轮撞车,按钮变死键),
+        # 与 todo 卡 locked 语义一致 —— 这正是「轮次上限 20」的完整含义。
         out = _card_dsl.render_card(REVIEW, round_=99)
-        names = {v["action"] for v in _walk_values(out["card"])}
-        assert all(n.endswith("_r19") for n in names)  # clamped to _MAX_ROUNDS-1
+        tags = {e.get("tag") for e in _elements(out["card"])}
+        assert out["ok"]
+        assert "column_set" not in tags and "input" not in tags
+        assert out["handlers"] == {}
+        # 边界内每一轮仍可用:round_=19 是最后一个可交互轮次
+        out19 = _card_dsl.render_card(REVIEW, round_=19)
+        names = {v["action"] for v in _walk_values(out19["card"])}
+        assert all(n.endswith("_r19") for n in names)
 
     def test_ring2_round_floor_is_0(self):
         out = _card_dsl.render_card(REVIEW, round_=-5)

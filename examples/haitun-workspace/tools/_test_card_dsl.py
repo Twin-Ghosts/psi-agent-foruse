@@ -176,10 +176,15 @@ class TestActionSixRing(unittest.TestCase):
         self.assertEqual(h["review_input_r5"], "feishu_review_input")
         self.assertEqual(h["review_reject_r0"], "feishu_review_reject")
 
-    def test_round_clamped(self):
+    def test_round_exhausted_renders_terminal_readonly(self):
+        # 轮次用尽(round >= _MAX_ROUNDS=20):不再钳回 19 重发已消费的动作名
+        # (那会让重建后的按钮全是死键),而是退化为只读卡——与 todo 卡 locked 一致。
         out = _card_dsl.render_card(REVIEW_XML, round_=999)
-        # clamped to _MAX_ROUNDS-1 = 19
-        self.assertEqual(_score_value(out["card"])["action"], "review_score_r19")
+        self.assertTrue(out["ok"])
+        tags = [e.get("tag") for e in out["card"]["body"]["elements"]]
+        self.assertNotIn("column_set", tags)
+        self.assertNotIn("input", tags)
+        self.assertEqual(out["handlers"], {})
 
     def test_round_negative_or_bad(self):
         for bad in (-5, "abc", None):

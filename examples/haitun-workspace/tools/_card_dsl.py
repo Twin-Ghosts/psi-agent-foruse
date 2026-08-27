@@ -110,6 +110,12 @@ _MAX_ROUNDS = 20
 
 
 def _parse_round(raw: Any) -> int:
+    """Parse an int-ish value into a bounded round index (0.._MAX_ROUNDS-1).
+
+    Used for ``selected``(选中分数,非轮次,钳到合法区间即可)与历史轮次值;
+    ``render_card`` 的 round_ 参数不从这里走——它需要区分「轮次用尽
+    (>= _MAX_ROUNDS)」与「非法输入(回 0)」,在调用侧单独解析。
+    """
     try:
         return max(0, min(int(raw), _MAX_ROUNDS - 1))
     except TypeError, ValueError:
@@ -186,7 +192,9 @@ def _base_value(element: ET.Element, action: str, score: int, round_: int, conte
     return value
 
 
-def _score_columns(element: ET.Element, round_: int, context: dict[str, Any]) -> list[dict[str, Any]]:
+def _score_columns(
+    element: ET.Element, round_: int, context: dict[str, Any], occurrence: int = 0
+) -> list[dict[str, Any]]:
     min_raw = element.get("min") or "1"
     max_raw = element.get("max") or "5"
     try:
@@ -201,7 +209,10 @@ def _score_columns(element: ET.Element, round_: int, context: dict[str, Any]) ->
     columns: list[dict[str, Any]] = []
     for score in range(lo, hi + 1):
         is_selected = score == selected
-        action_id = f"{action}_{score}_r{round_}"
+        # 同一 action 的第二个 score 组起,把出现序号折进 action_id(与按钮/评论框
+        # 同规则):两个评分组若同 action 同 min/max,action_id 会完全撞车,后一组
+        # 的每次点击都被前一组已消费的同名 action 墓碑拦截——出现序号保证唯一。
+        action_id = f"{action}_{score}_r{round_}" if occurrence == 0 else f"{action}_{score}_{occurrence}_r{round_}"
         value = _base_value(element, f"{action}_r{round_}", score, round_, context)
         value["action_id"] = action_id
         columns.append(
@@ -287,6 +298,51 @@ def _resolve_handler(action: str, extra_handlers: dict[str, str]) -> str:
     return handler
 
 
+def _compile_terminal(root: ET.Element, context: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+    """Compile a card whose action rounds are exhausted into a read-only terminal card.
+
+    Called when ``round_ >= _MAX_ROUNDS`` — the 20 pre-registered action rounds
+    (0..19) have all been consumed (Feishu tombstones each action id forever).
+    Instead of clamping the round back to 19 and re-emitting the just-consumed
+    ``_r19`` names (every button a dead key), the card becomes a static record:
+    interactive elements degrade to passive info lines, no action is emitted,
+    and the handlers map is empty. This mirrors the todo card's ``locked``
+    terminal state — 轮次用尽即锁定为只读。
+    """
+    title = (root.get("title") or "").strip()
+    template = _TEMPLATE_COLORS[(root.get("template") or "blue").strip()]
+    elements: list[dict[str, Any]] = []
+    for child in root:
+        tag = child.tag
+        if tag == "info":
+            label = (child.get("label") or "").strip()
+            value = (child.get("value") or "").strip()
+            if not label or not value:
+                raise ValueError("<info> requires label and value attributes")
+            elements.append(_markdown_line(label, value))
+        elif tag == "score":
+            selected = _parse_round(child.get("selected") or 0)
+            elements.append(_markdown_line("评分", f"{selected} 分" if selected >= 1 else "未打分"))
+        elif tag == "comment":
+            comment_value = str(context.get("comment_value") or "").strip()
+            if comment_value:
+                elements.append(_markdown_line("评语", comment_value))
+        elif tag in ("action-row", "list"):
+            # 终态不再提供任何交互(action-row 按钮、list 行勾选全部退化)。
+            continue
+        else:
+            raise ValueError(f"unknown element <{tag}> — vocabulary: info/score/comment/action-row/list under <card>")
+    card: dict[str, Any] = {
+        "schema": "2.0",
+        "header": {
+            "template": template,
+            "title": {"tag": "plain_text", "content": title},
+        },
+        "body": {"elements": elements},
+    }
+    return card, {}
+
+
 def _compile(
     root: ET.Element, round_: int, context: dict[str, Any], extra_handlers: dict[str, str]
 ) -> tuple[dict[str, Any], dict[str, str]]:
@@ -322,13 +378,15 @@ def _compile(
             depth = max(rounds, round_ + 1)
             for r in range(depth):
                 handlers[f"{action}_r{r}"] = handler
+            occurrence = action_occurrence.get(action, 0)
+            action_occurrence[action] = occurrence + 1
             elements.append(
                 {
                     "tag": "column_set",
                     "flex_mode": "none",
                     "horizontal_spacing": "4px",
                     "background_style": "default",
-                    "columns": _score_columns(child, round_, context),
+                    "columns": _score_columns(child, round_, context, occurrence),
                 }
             )
         elif tag == "comment":
@@ -403,9 +461,7 @@ def _compile_list_card(root: ET.Element, context: dict[str, Any]) -> tuple[dict[
     # 行默认形状:行级 shape > 卡级 shape(context 注入,发卡工具的参数) >
     # list 元素属性 > circle。shape 走 context 而不是模板占位符,避免第三方
     # 渲染不传时把字面量 {shape} 填进属性。
-    shape_default = (
-        str(context.get("shape") or list_el.get("shape") or "circle").strip() or "circle"
-    )
+    shape_default = str(context.get("shape") or list_el.get("shape") or "circle").strip() or "circle"
     rows: list[dict[str, Any]] = []
     for row_el in list_el:
         if row_el.tag != "row":
@@ -632,7 +688,11 @@ def render_card(
         return {"ok": False, "error": "handler_overrides_json is not valid JSON"}
     if not isinstance(overrides, dict):
         return {"ok": False, "error": "handler_overrides_json must be a JSON object"}
-    round_ = _parse_round(round_)
+    try:
+        round_int = int(round_)
+    except TypeError, ValueError:
+        round_int = 0
+    round_ = max(0, min(round_int, _MAX_ROUNDS - 1))
     # overrides 先并入编译,自定义 action 在编译阶段就能解析到 handler。
     extra_handlers: dict[str, str] = {
         action: handler
@@ -653,7 +713,12 @@ def render_card(
                     raise ValueError(f"list 卡暂只支持 <list> 元素,不支持 <{child.tag}>")
             card, handlers = _compile_list_card(root, dict(context))
         else:
-            card, handlers = _compile(root, round_, dict(context), extra_handlers)
+            if round_int >= _MAX_ROUNDS:
+                # 轮次用尽(>= 20):终态只读卡,不再发任何 action——否则 round 重新
+                # 钳回 19,动作名与第 20 轮已消费的撞车,重建后的按钮全是死键。
+                card, handlers = _compile_terminal(root, dict(context))
+            else:
+                card, handlers = _compile(root, round_, dict(context), extra_handlers)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
     return {"ok": True, "card": card, "handlers": handlers}
