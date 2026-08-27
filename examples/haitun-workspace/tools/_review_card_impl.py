@@ -141,6 +141,26 @@ def _round_of(action: str) -> int:
         return 0
 
 
+def _round_of_value(value: dict[str, Any]) -> int:
+    """Recover the current round from a callback value.
+
+    The engine writes ``value["round"]`` (int) alongside ``value["action"]``
+    (``{action}_r{round}``). Prefer the int; fall back to parsing the action
+    name. A rebuild renders ``this + 1`` so the next click gets a fresh action
+    name and clears the Channel ``(message_id, action)`` tombstone.
+    """
+    if not isinstance(value, dict):
+        return 0
+    raw = value.get("round")
+    if isinstance(raw, bool):  # bool is an int subclass; a stray True must not read as round 1
+        return 0
+    if isinstance(raw, int) and raw >= 0:
+        return raw
+    if isinstance(raw, str) and raw.strip().isdigit():
+        return int(raw.strip())
+    return _round_of(value.get("action") if isinstance(value.get("action"), str) else "")
+
+
 def _card_comment_value(payload: dict[str, Any]) -> str:
     """Recover the comment input's current text from the click-time card snapshot.
 
@@ -206,6 +226,7 @@ async def _handle_score_select(card_action_json: str, user_key: str = "") -> dic
     table_id = str(value.get("ledger_table_id") or "").strip() or "tblyPdcD9qzvAMGU"
     score_raw = value.get("score")
     selected_score = int(score_raw) if isinstance(score_raw, int) and 1 <= score_raw <= 5 else 0
+    next_round = _round_of_value(value) + 1
 
     ledger_result: dict[str, Any] = {"ok": True, "skipped": "no score"}
     if selected_score:
@@ -234,6 +255,7 @@ async def _handle_score_select(card_action_json: str, user_key: str = "") -> dic
             comment_value=_card_comment_value(payload),
             ledger_app_token=app_token,
             ledger_table_id=table_id,
+            round_=next_round,
         )
     except RuntimeError as e:
         return {"ok": False, "error": f"{e}"}
@@ -318,6 +340,7 @@ async def _handle_review_input(card_action_json: str, user_key: str = "") -> dic
     task_guid = str(value.get("task_guid") or "").strip()
     score_raw = value.get("score")
     selected_score = int(score_raw) if isinstance(score_raw, int) and 1 <= score_raw <= 5 else 0
+    next_round = _round_of_value(value) + 1
     kept_comment = comment or _card_comment_value(payload)
     if message_id:
         try:
@@ -333,6 +356,7 @@ async def _handle_review_input(card_action_json: str, user_key: str = "") -> dic
                 comment_value=kept_comment,
                 ledger_app_token=app_token,
                 ledger_table_id=table_id,
+                round_=next_round,
             )
         except RuntimeError as e:
             card_result = {"ok": False, "error": f"{e}"}
@@ -500,6 +524,7 @@ async def _handle_review_reject(card_action_json: str, user_key: str = "") -> di
     cycle_date = str(value.get("cycle_date") or "").strip()
     score_raw = value.get("score")
     selected_score = int(score_raw) if isinstance(score_raw, int) and 1 <= score_raw <= 5 else 0
+    next_round = _round_of_value(value) + 1
     card_result: dict[str, Any] = {"ok": True, "skipped": "no rebuild info"}
     if message_id:
         try:
@@ -516,6 +541,7 @@ async def _handle_review_reject(card_action_json: str, user_key: str = "") -> di
                 ledger_app_token=app_token,
                 ledger_table_id=table_id,
                 note=("已打回重做——任务已回到进行中,执行人重新完成后会再发一张新的评价卡。"),
+                round_=next_round,
             )
         except RuntimeError as e:
             card_result = {"ok": False, "error": f"{e}"}
@@ -581,15 +607,24 @@ def _render_review_card(
     ledger_app_token: str = "",
     ledger_table_id: str = "",
     note: str = "",
+    round_: int = 0,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     """Render the review card through the card-dsl template (发卡与重建共用).
 
     One template serves both the send path (``_send_review_card``) and every
     rebuild (score pick / comment confirm / reject) — values fill the card
     body, context fills the callback values. Returns ``(card, handlers)``.
+
+    ``round_`` drives the action-name round suffix (``{action}_r{round}``). The
+    send path renders round 0; every rebuild must pass the *next* round so the
+    new buttons carry fresh action names — otherwise the Channel dedup key
+    ``(message_id, value.action)`` (multi_use tombstone) rejects the second
+    click on the same card as an already-consumed action, silently dropping
+    re-scores / re-confirms.
     """
     rendered = render_template(
         "review-card",
+        round_=round_,
         values_json=json.dumps(
             {
                 "owner_name": owner_name,

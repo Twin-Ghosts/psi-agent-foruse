@@ -190,11 +190,11 @@ class TestActionSixRing(unittest.TestCase):
     def test_value_carries_bind_record_action_round_score(self):
         out = _card_dsl.render_card(REVIEW_XML, context_json='{"owner_name":"黄子建"}', round_=2)
         v = _score_value(out["card"])
-        self.assertEqual(v["record_id"], "recX")          # bind-record wins
-        self.assertEqual(v["owner_name"], "黄子建")         # context injected
+        self.assertEqual(v["record_id"], "recX")  # bind-record wins
+        self.assertEqual(v["owner_name"], "黄子建")  # context injected
         self.assertEqual(v["action"], "review_score_r2")
         self.assertEqual(v["round"], 2)
-        self.assertEqual(v["score"], 1)                    # first button = score 1
+        self.assertEqual(v["score"], 1)  # first button = score 1
         self.assertEqual(v["action_id"], "review_score_1_r2")
 
     def test_bind_record_overrides_context_record_id(self):
@@ -235,7 +235,7 @@ class TestBadInputs(unittest.TestCase):
 
 class TestTemplateAndEscaping(unittest.TestCase):
     def test_xml_escape_in_fill(self):
-        xml = "<card title=\"{t}\"/>"
+        xml = '<card title="{t}"/>'
         filled = _card_dsl._fill_template(xml, {"t": '<b>&"x'})
         self.assertNotIn("<b>", filled)
         self.assertIn("&lt;b&gt;", filled)
@@ -303,10 +303,6 @@ class TestListCard(unittest.TestCase):
         out = _card_dsl.render_card(xml)
         self.assertFalse(out["ok"])
         self.assertIn("list", out["error"])
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
 
 
 class TestEdgeFindings(unittest.TestCase):
@@ -532,9 +528,9 @@ class TestEscapingTorture(unittest.TestCase):
     def test_template_value_with_all_xml_metachars(self):
         # All five XML metacharacters — including quotes — must survive because
         # every fill target is a double-quoted attribute.
-        filled = _card_dsl._fill_template('<card title="{t}"/>', {"t": '<>&"\''})
+        filled = _card_dsl._fill_template('<card title="{t}"/>', {"t": "<>&\"'"})
         root = ET.fromstring(filled)  # must parse
-        self.assertEqual(root.get("title"), '<>&"\'')
+        self.assertEqual(root.get("title"), "<>&\"'")
 
     def test_double_quote_in_value_does_not_break_card(self):
         # A realistic title/name with a double quote must still compile.
@@ -612,3 +608,10 @@ class TestRebuildSemantics(unittest.TestCase):
         hi = [c["elements"][0] for c in cols if c["elements"][0]["type"] == "primary"]
         self.assertEqual(len(hi), 1)
         self.assertIn("3", hi[0]["text"]["content"])
+
+
+if __name__ == "__main__":
+    # Must stay at end of file: every TestCase above has to be defined before
+    # unittest.main() runs, or a direct `python _test_card_dsl.py` silently skips
+    # the classes declared later (the 2026-08-27 review's 34-of-64 gap).
+    unittest.main(verbosity=2)

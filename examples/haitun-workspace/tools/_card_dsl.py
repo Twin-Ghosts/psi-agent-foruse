@@ -311,7 +311,13 @@ def _compile(
             action = (child.get("action") or _DEFAULT_SCORE_ACTION).strip()
             handler = _resolve_handler(action, extra_handlers)
             rounds = _parse_rounds(child.get("rounds"))
-            for r in range(rounds):
+            # rounds 是预注册的最小前瞻深度,但当前渲染轮次必须始终可路由:
+            # round_ 被 _parse_round 钳到 [0, _MAX_ROUNDS-1],若 rounds < round_+1
+            # (如模板声明 rounds=5 却已重建到第 6 轮),score 按钮会指向未注册的
+            # handler 成死键。取 max 保证当前轮永远有 handler,同时仍尊重 rounds
+            # 作为最小预注册深度(comment/button 恒注册满 _MAX_ROUNDS 故无此问题)。
+            depth = max(rounds, round_ + 1)
+            for r in range(depth):
                 handlers[f"{action}_r{r}"] = handler
             elements.append(
                 {
@@ -399,7 +405,10 @@ def _compile_list_card(root: ET.Element, context: dict[str, Any]) -> tuple[dict[
         title = (row_el.get("title") or "").strip()
         if not title:
             raise ValueError("<row> requires a title attribute")
-        done = (row_el.get("done") or "").strip() == "true"
+        # XSD 声明 done 为 xs:boolean,合法字面量是 true/false/1/0(大小写敏感按
+        # XSD 规范,但 LLM 常写 True/TRUE,一并容错)。只认 =="true" 会把 done="1"
+        # 静默当未完成,与 Schema 漂移;这里对齐 XSD 的布尔取值集。
+        done = (row_el.get("done") or "").strip().lower() in ("true", "1")
         rows.append(
             {
                 "title": title,
