@@ -696,7 +696,7 @@ async def _send_review_card(value: dict[str, Any], title: str, task_guid: str, u
         owner_name = str(user_key or "该成员")
     cycle_date_raw = fields.get("周期日期")
     cycle_date = ""
-    if isinstance(cycle_date_raw, (int, float)) and cycle_date_raw:
+    if isinstance(cycle_date_raw, int | float) and cycle_date_raw:
         # Bitable date fields arrive as epoch milliseconds.
         try:
             cycle_date = datetime.datetime.fromtimestamp(int(cycle_date_raw) / 1000).strftime("%Y-%m-%d")
