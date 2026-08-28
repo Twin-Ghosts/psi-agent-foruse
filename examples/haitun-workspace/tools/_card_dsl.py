@@ -146,6 +146,92 @@ def _markdown_line(label: str, value: str) -> dict[str, Any]:
     return {"tag": "markdown", "content": f"**{label}**：{value}"}  # noqa: RUF001 (卡片文案使用全角标点)
 
 
+# 表格单屏上限:卡片高度有限,行数据由调用方预取注入 context,引擎只负责
+# 截断——超出的行靠「打开台账/工作树」链接看全量,卡片永远不承载整张表。
+_TABLE_MAX_ROWS = 10
+
+
+def _table_block(element: ET.Element, context: dict[str, Any]) -> list[dict[str, Any]]:
+    """Compile a read-only <table> into a column_set grid.
+
+    飞书卡片 2.0 没有原生 table 组件,报表卡/统计卡的表格用 column_set 网格
+    模拟:表头一行(加粗 label)+ 每行数据一个 column_set,各列按 <col width>
+    权重排布。单元格值是调用方注入 context 的文本,**按 markdown 放行**
+    (调用方可写 **加粗** 或 <font color='red'> 标红,引擎不解析不转义)。
+    空表渲染 empty 文案,不报错。行数据默认从 context["rows"] 读,
+    <table source="..."> 可改名(如 boss 卡的 teams)。
+    """
+    source = (element.get("source") or "rows").strip()
+    empty = (element.get("empty") or "暂无数据").strip()
+    cols: list[dict[str, str]] = []
+    for col in element:
+        if col.tag != "col":
+            raise ValueError(f"<table> only holds <col>, got <{col.tag}>")
+        field = (col.get("field") or "").strip()
+        if not field:
+            raise ValueError("<col> requires a field attribute")
+        cols.append(
+            {
+                "field": field,
+                "label": (col.get("label") or field).strip(),
+                "width": (col.get("width") or "auto").strip(),
+            }
+        )
+    if not cols:
+        raise ValueError("<table> requires at least one <col>")
+    rows = context.get(source)
+    if not isinstance(rows, list) or not rows:
+        return [{"tag": "markdown", "content": f"_{empty}_"}]
+    blocks: list[dict[str, Any]] = []
+    header_columns: list[dict[str, Any]] = []
+    for col in cols:
+        header_columns.append(
+            {
+                "tag": "column",
+                "width": col["width"],
+                "elements": [{"tag": "markdown", "content": f"**{col['label']}**"}],
+            }
+        )
+    blocks.append(
+        {
+            "tag": "column_set",
+            "flex_mode": "none",
+            "horizontal_spacing": "4px",
+            "background_style": "default",
+            "columns": header_columns,
+        }
+    )
+    for row in rows[: _TABLE_MAX_ROWS]:
+        if not isinstance(row, dict):
+            continue
+        row_columns: list[dict[str, Any]] = []
+        for col in cols:
+            raw = row.get(col["field"])
+            text = "" if raw is None else str(raw)
+            row_columns.append(
+                {
+                    "tag": "column",
+                    "width": col["width"],
+                    "elements": [{"tag": "markdown", "content": text or "—"}],
+                }
+            )
+        blocks.append(
+            {
+                "tag": "column_set",
+                "flex_mode": "none",
+                "horizontal_spacing": "4px",
+                "background_style": "default",
+                "columns": row_columns,
+            }
+        )
+    return blocks
+
+
+def _divider_block() -> dict[str, Any]:
+    """Compile <divider/> into a section separator."""
+    return {"tag": "hr"}
+
+
 def _base_value(element: ET.Element, action: str, score: int, round_: int, context: dict[str, Any]) -> dict[str, Any]:
     """Assemble the callback value shared by one interactive element.
 
@@ -337,8 +423,12 @@ def _compile(
                     "columns": columns,
                 }
             )
+        elif tag == "table":
+            elements.extend(_table_block(child, context))
+        elif tag == "divider":
+            elements.append(_divider_block())
         else:
-            raise ValueError(f"unknown element <{tag}> — vocabulary: info/score/comment/action-row/list under <card>")
+            raise ValueError(f"unknown element <{tag}> — vocabulary: info/score/comment/action-row/list/table/divider under <card>")
 
     card: dict[str, Any] = {
         "schema": "2.0",

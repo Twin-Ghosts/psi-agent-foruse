@@ -22,6 +22,9 @@ category: productivity
 | `button` | `text` / `type` / `action`(必填) | 动作按钮 |
 | `list` | `shape`(默认circle) | 待办列表(todo 卡):多行逐条勾选,子元素 `row` |
 | `row` | `title`(必填)/ `task-guid` / `detail` / `shape` / `bind-record` / `done` | 一行待办;`done="true"` 的行发卡时即只读(无按钮) |
+| `table` | `source`(默认rows)/ `empty` | 只读表格(报表卡/统计卡):子元素 `col`;行数据由调用方预取注入 context,单屏截断 10 行,空表渲染 empty 文案 |
+| `col` | `field`(必填)/ `label` / `width` | 表格列:field 是行数据里的键,label 是表头,width 是列宽权重(1-5 或 auto) |
+| `divider` | — | 分割线,区块分隔(纯展示) |
 
 `template` 取值与配色:`blue`(普通)/ `green`(成功、完成态)/ `red`(告警、逾期)/ `grey`(归档、只读)。
 `button type` 语义色(业务只写语义,不写颜色):`accept` 通过→蓝(绿是设计意图,飞书按钮暂无绿色);
@@ -42,7 +45,8 @@ category: productivity
 ## 固定卡型模板(首选路径)
 
 固定卡型的 XML 骨架已固化成模板(`templates/` 目录,与 SKILL.md 同目录):
-`review-card.xml`(评价卡)、`todo-card.xml`(todo 卡)。**发固定卡型一律用模板,
+`review-card.xml`(评价卡)、`todo-card.xml`(todo 卡)、`mentor-report-card.xml`
+(mentor 摘要卡)、`boss-overview-card.xml`(boss 整体统计卡)。**发固定卡型一律用模板,
 只填数据、不手写结构**(手写 XML 仅用于模板覆盖不了的新卡型):
 
 ```
@@ -59,7 +63,10 @@ feishu_card_render(template="todo-card",
   context_json={"ledger_app_token":..., "ledger_table_id":...})
 ```
 
-模板占位符是 `{key}`(值自动 XML 转义);`{rows}` 由行数组展开。
+模板占位符是 `{key}`(值自动 XML 转义);`{rows}` 由行数组展开。报表/统计卡的
+`<table>` 行数据不走占位符,由 `context_json` 注入(`{"rows":[...]}` 或模板里
+`source` 指定的键),空数组时表格区渲染 `empty` 文案;单元格文本按 markdown
+放行(调用方可写 `<font color='red'>逾期</font>` 标红)。
 
 ## 示例:评价卡(自由声明,约 10 行 XML)
 

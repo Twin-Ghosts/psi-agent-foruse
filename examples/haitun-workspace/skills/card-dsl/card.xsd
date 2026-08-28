@@ -115,6 +115,34 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- 表格列:field 是行数据(注入 context)里的键,label 是表头文字,
+       width 是飞书 column 宽度(权重数字 1-5 或 auto)。 -->
+  <xs:element name="col">
+    <xs:complexType>
+      <xs:attribute name="field" type="xs:string" use="required"/>
+      <xs:attribute name="label" type="xs:string" use="optional"/>
+      <xs:attribute name="width" type="xs:string" default="auto"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- 只读表格:报表卡/统计卡的明细与维度展示。行数据由调用方预取注入
+       context(source 指定的键,默认 rows),引擎编译为 column_set 网格
+       (飞书卡片无原生 table),单屏截断 10 行。空表渲染 empty 文案。 -->
+  <xs:element name="table">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="col" minOccurs="1" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="source" type="xs:string" default="rows"/>
+      <xs:attribute name="empty" type="xs:string" default="暂无数据"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- 分割线:区块分隔(纯展示) -->
+  <xs:element name="divider">
+    <xs:complexType/>
+  </xs:element>
+
   <!-- 根元素:卡片容器,title 必填 -->
   <xs:element name="card">
     <xs:complexType>
@@ -124,6 +152,8 @@
         <xs:element ref="comment"/>
         <xs:element ref="action-row"/>
         <xs:element ref="list"/>
+        <xs:element ref="table"/>
+        <xs:element ref="divider"/>
       </xs:choice>
       <xs:attribute name="title" type="xs:string" use="required"/>
       <xs:attribute name="template" type="Template" default="blue"/>
