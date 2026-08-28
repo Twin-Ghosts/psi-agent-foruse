@@ -1,0 +1,19 @@
+{
+  "_comment": "每个 mentor 的台账多维表格（bitable）来源。这是「从哪取数」的地址清单，不是数据。海豚每周期发卡前用 fetch_ledgers.py 按此拉取；某 mentor 的台账链接拿到后填入对应条目即可自动切换（②③④⑥ 改台账口径），缺条目的组回落人工核对档案（data/manual_calibration.json）。",
+  "孙逊": {
+    "name": "TODO 台账-孙逊",
+    "url": "https://genuineknowledge.feishu.cn/base/C6sQbhhj1a5BRkslxjOcY2PPnYc?table=tblhfghF8Iz2Fb1j&view=vew19x5iJt",
+    "app_token": "C6sQbhhj1a5BRkslxjOcY2PPnYc",
+    "tables": [
+      "tblhfghF8Iz2Fb1j",
+      "tblyPdcD9qzvAMGU"
+    ]
+  },
+  "周熠": {},
+  "张浩": {},
+  "郑淳": {},
+  "王金旺": {},
+  "程秀秀": {},
+  "李秉千": {},
+  "潘逸轩": {}
+}
