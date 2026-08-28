@@ -25,11 +25,16 @@ _impl._UNDO_ROUNDS = 20
 _impl._build_card_from_state = lambda state: {"schema": "2.0", "_legacy_state": state, "_state": state}
 _impl._tick_action_id = lambda i, r: f"todo_tick_{i}_r{r}"
 _impl._untick_action_id = lambda i, r: f"todo_untick_{i}_r{r}"
-sys.modules.setdefault("_todo_card_impl", _impl)
+# 收集顺序无关:强制安装本套件的 stub(与其余 stub 套件形状一致),使 _card_dsl
+# 的模块级绑定不依赖 pytest 的导入顺序(strict 套件会再 pop 重导真实实现)。
+sys.modules.pop("_todo_card_impl", None)
+sys.modules.pop("_runtime_paths", None)
+sys.modules.pop("_card_dsl", None)
+sys.modules["_todo_card_impl"] = _impl
 
 _paths = types.ModuleType("_runtime_paths")
 _paths.agent_dir = lambda: os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.modules.setdefault("_runtime_paths", _paths)
+sys.modules["_runtime_paths"] = _paths
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _card_dsl  # noqa: E402
@@ -159,9 +164,18 @@ class TestActionSixRings:
             assert all(n.endswith(f"_r{rnd}") for n in names), names
 
     def test_ring2_round_ceiling_is_20(self):
+        # 20 轮可用(0..19);第 21 次重建(round>=20)轮次用尽 → 终态只读卡:
+        # 不再发任何 action(否则动作名与已消费的第 20 轮撞车,按钮变死键),
+        # 与 todo 卡 locked 语义一致 —— 这正是「轮次上限 20」的完整含义。
         out = _card_dsl.render_card(REVIEW, round_=99)
-        names = {v["action"] for v in _walk_values(out["card"])}
-        assert all(n.endswith("_r19") for n in names)  # clamped to _MAX_ROUNDS-1
+        tags = {e.get("tag") for e in _elements(out["card"])}
+        assert out["ok"]
+        assert "column_set" not in tags and "input" not in tags
+        assert out["handlers"] == {}
+        # 边界内每一轮仍可用:round_=19 是最后一个可交互轮次
+        out19 = _card_dsl.render_card(REVIEW, round_=19)
+        names = {v["action"] for v in _walk_values(out19["card"])}
+        assert all(n.endswith("_r19") for n in names)
 
     def test_ring2_round_floor_is_0(self):
         out = _card_dsl.render_card(REVIEW, round_=-5)
@@ -186,15 +200,13 @@ class TestActionSixRings:
     # ring 4 回调组装: value carries bind-record + context + action + round (+score).
     def test_ring4_value_contract_complete(self):
         out = _card_dsl.render_card(REVIEW, context_json='{"owner_name":"黄子建","task_guid":"g1"}', round_=2)
-        score_v = next(
-            v for v in _walk_values(out["card"]) if v["action"] == "review_score_r2" and "score" in v
-        )
-        assert score_v["record_id"] == "recXXX"      # bind-record
-        assert score_v["owner_name"] == "黄子建"       # context
-        assert score_v["task_guid"] == "g1"           # context
+        score_v = next(v for v in _walk_values(out["card"]) if v["action"] == "review_score_r2" and "score" in v)
+        assert score_v["record_id"] == "recXXX"  # bind-record
+        assert score_v["owner_name"] == "黄子建"  # context
+        assert score_v["task_guid"] == "g1"  # context
         assert score_v["action"] == "review_score_r2"  # action + round
         assert score_v["round"] == 2
-        assert score_v["score"] in range(1, 6)         # current score
+        assert score_v["score"] in range(1, 6)  # current score
 
     def test_ring4_every_click_target_is_dispatchable(self):
         # Every action embedded in a value MUST have a handler, else the click dead-ends.
@@ -239,8 +251,14 @@ class TestTemplatePromises:
         out = _card_dsl.render_template(
             "review-card",
             values_json=json.dumps(
-                {"owner_name": "黄子建", "title": "优化方案", "delivered_at": "08-27",
-                 "record_id": "recX", "selected_score": 3, "note": ""},
+                {
+                    "owner_name": "黄子建",
+                    "title": "优化方案",
+                    "delivered_at": "08-27",
+                    "record_id": "recX",
+                    "selected_score": 3,
+                    "note": "",
+                },
                 ensure_ascii=False,
             ),
             context_json='{"owner_name":"黄子建"}',
@@ -253,8 +271,13 @@ class TestTemplatePromises:
         out = _card_dsl.render_template(
             "review-card",
             values_json=json.dumps(
-                {"owner_name": 'He said "hi" <b>&', "title": "T", "delivered_at": "d",
-                 "record_id": "r", "selected_score": 0},
+                {
+                    "owner_name": 'He said "hi" <b>&',
+                    "title": "T",
+                    "delivered_at": "d",
+                    "record_id": "r",
+                    "selected_score": 0,
+                },
                 ensure_ascii=False,
             ),
         )
@@ -265,10 +288,13 @@ class TestTemplatePromises:
         out = _card_dsl.render_template(
             "todo-card",
             values_json=json.dumps(
-                {"title": "今日 TODO", "rows": [
-                    {"title": "写方案", "task_guid": "g1", "bind_record": "r1"},
-                    {"title": "评审", "done": True},
-                ]},
+                {
+                    "title": "今日 TODO",
+                    "rows": [
+                        {"title": "写方案", "task_guid": "g1", "bind_record": "r1"},
+                        {"title": "评审", "done": True},
+                    ],
+                },
                 ensure_ascii=False,
             ),
             context_json='{"ledger_app_token":"tok","ledger_table_id":"tbl"}',
@@ -317,8 +343,7 @@ class TestSecondCardTypeZeroChange:
 
     def test_list_card_renders_without_engine_change(self):
         out = _card_dsl.render_card(
-            '<card title="今日 TODO"><list><row title="a" bind-record="r1"/>'
-            '<row title="b" done="true"/></list></card>',
+            '<card title="今日 TODO"><list><row title="a" bind-record="r1"/><row title="b" done="true"/></list></card>',
             context_json='{"ledger_app_token":"tok","ledger_table_id":"tbl"}',
         )
         assert out["ok"], out.get("error")
@@ -328,7 +353,7 @@ class TestSecondCardTypeZeroChange:
     def test_list_done_row_is_readonly(self):
         out = _card_dsl.render_card(
             '<card title="t"><list><row title="done-one" done="true"/></list></card>',
-            context_json='{}',
+            context_json="{}",
         )
         assert out["card"]["_legacy_state"]["rows"][0]["locked"] is True
 
@@ -337,3 +362,12 @@ class TestSecondCardTypeZeroChange:
         out = _card_dsl.render_card('<card title="t"><list><row title="a"/></list><score bind-record="r"/></card>')
         assert not out["ok"]
         assert "list" in out["error"]
+
+
+if __name__ == "__main__":
+    # pytest-style classes (bare asserts, no unittest.TestCase): a plain
+    # `python _test_card_dsl_spec.py` would collect nothing. Delegate to pytest
+    # so direct execution runs the full suite instead of silently passing.
+    import pytest
+
+    raise SystemExit(pytest.main([__file__, "-q", "-o", "addopts="]))

@@ -5,8 +5,8 @@ Runs without the full psi-agent runtime: the two runtime deps
 validation, the Action six-ring behaviour, template filling and XML escaping
 can all be exercised in isolation.
 
-Run:  PYTHONPATH=. python -m pytest test_card_dsl_standalone.py -q
-  or: PYTHONPATH=. python test_card_dsl_standalone.py
+Run:  python -m pytest _test_card_dsl.py -q   (pytest 已配置 pythonpath)
+  or: python _test_card_dsl.py
 """
 
 from __future__ import annotations
@@ -30,11 +30,16 @@ _stub_impl._UNDO_ROUNDS = 20
 _stub_impl._build_card_from_state = lambda state: {"_state": state, "_legacy_state": state, "schema": "2.0"}
 _stub_impl._tick_action_id = lambda i, r: f"todo_tick_{i}_r{r}"
 _stub_impl._untick_action_id = lambda i, r: f"todo_untick_{i}_r{r}"
-sys.modules.setdefault("_todo_card_impl", _stub_impl)
+# 收集顺序无关:强制安装本套件的 stub(与其余 stub 套件形状一致),使 _card_dsl
+# 的模块级绑定不依赖 pytest 的导入顺序(strict 套件会再 pop 重导真实实现)。
+sys.modules.pop("_todo_card_impl", None)
+sys.modules.pop("_runtime_paths", None)
+sys.modules.pop("_card_dsl", None)
+sys.modules["_todo_card_impl"] = _stub_impl
 
 _stub_paths = types.ModuleType("_runtime_paths")
 _stub_paths.agent_dir = lambda: os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.modules.setdefault("_runtime_paths", _stub_paths)
+sys.modules["_runtime_paths"] = _stub_paths
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _card_dsl  # noqa: E402
@@ -176,10 +181,15 @@ class TestActionSixRing(unittest.TestCase):
         self.assertEqual(h["review_input_r5"], "feishu_review_input")
         self.assertEqual(h["review_reject_r0"], "feishu_review_reject")
 
-    def test_round_clamped(self):
+    def test_round_exhausted_renders_terminal_readonly(self):
+        # 轮次用尽(round >= _MAX_ROUNDS=20):不再钳回 19 重发已消费的动作名
+        # (那会让重建后的按钮全是死键),而是退化为只读卡——与 todo 卡 locked 一致。
         out = _card_dsl.render_card(REVIEW_XML, round_=999)
-        # clamped to _MAX_ROUNDS-1 = 19
-        self.assertEqual(_score_value(out["card"])["action"], "review_score_r19")
+        self.assertTrue(out["ok"])
+        tags = [e.get("tag") for e in out["card"]["body"]["elements"]]
+        self.assertNotIn("column_set", tags)
+        self.assertNotIn("input", tags)
+        self.assertEqual(out["handlers"], {})
 
     def test_round_negative_or_bad(self):
         for bad in (-5, "abc", None):
@@ -190,11 +200,11 @@ class TestActionSixRing(unittest.TestCase):
     def test_value_carries_bind_record_action_round_score(self):
         out = _card_dsl.render_card(REVIEW_XML, context_json='{"owner_name":"黄子建"}', round_=2)
         v = _score_value(out["card"])
-        self.assertEqual(v["record_id"], "recX")          # bind-record wins
-        self.assertEqual(v["owner_name"], "黄子建")         # context injected
+        self.assertEqual(v["record_id"], "recX")  # bind-record wins
+        self.assertEqual(v["owner_name"], "黄子建")  # context injected
         self.assertEqual(v["action"], "review_score_r2")
         self.assertEqual(v["round"], 2)
-        self.assertEqual(v["score"], 1)                    # first button = score 1
+        self.assertEqual(v["score"], 1)  # first button = score 1
         self.assertEqual(v["action_id"], "review_score_1_r2")
 
     def test_bind_record_overrides_context_record_id(self):
@@ -235,7 +245,7 @@ class TestBadInputs(unittest.TestCase):
 
 class TestTemplateAndEscaping(unittest.TestCase):
     def test_xml_escape_in_fill(self):
-        xml = "<card title=\"{t}\"/>"
+        xml = '<card title="{t}"/>'
         filled = _card_dsl._fill_template(xml, {"t": '<b>&"x'})
         self.assertNotIn("<b>", filled)
         self.assertIn("&lt;b&gt;", filled)
@@ -303,10 +313,6 @@ class TestListCard(unittest.TestCase):
         out = _card_dsl.render_card(xml)
         self.assertFalse(out["ok"])
         self.assertIn("list", out["error"])
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
 
 
 class TestEdgeFindings(unittest.TestCase):
@@ -535,9 +541,9 @@ class TestEscapingTorture(unittest.TestCase):
     def test_template_value_with_all_xml_metachars(self):
         # All five XML metacharacters — including quotes — must survive because
         # every fill target is a double-quoted attribute.
-        filled = _card_dsl._fill_template('<card title="{t}"/>', {"t": '<>&"\''})
+        filled = _card_dsl._fill_template('<card title="{t}"/>', {"t": "<>&\"'"})
         root = ET.fromstring(filled)  # must parse
-        self.assertEqual(root.get("title"), '<>&"\'')
+        self.assertEqual(root.get("title"), "<>&\"'")
 
     def test_double_quote_in_value_does_not_break_card(self):
         # A realistic title/name with a double quote must still compile.
@@ -615,3 +621,10 @@ class TestRebuildSemantics(unittest.TestCase):
         hi = [c["elements"][0] for c in cols if c["elements"][0]["type"] == "primary"]
         self.assertEqual(len(hi), 1)
         self.assertIn("3", hi[0]["text"]["content"])
+
+
+if __name__ == "__main__":
+    # 必须放文件末尾:unittest.main() 一执行即跑完退出,放在中间会让
+    # 其后声明的测试类(TestEdgeFindings 等)永远不被执行(D05)。
+    # (2026-08-27 核验报告 34-of-64 gap;需在全部 TestCase 定义之后运行)
+    unittest.main(verbosity=2)

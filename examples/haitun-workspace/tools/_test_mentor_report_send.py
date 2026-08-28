@@ -256,15 +256,17 @@ class TestTableRowExpansion(unittest.TestCase):
             mentor_open_id="ou_m", mentor_name="赵", cycle_date="2026-08-28",
             ledger_app_token="appX", ledger_table_id="tblCYC",
         )
-        sets = [e for e in _SENT[0]["card"]["body"]["elements"] if e.get("tag") == "column_set"]
-        # 1 header + 3 data rows（按负责人分组：张三两条在前、李四一条）
-        self.assertEqual(len(sets), 4)
-        row1 = [c["elements"][0]["content"] for c in sets[1]["columns"]]
-        self.assertEqual(row1[0], "大目标1")  # level
-        self.assertEqual(row1[1], "目标A")  # title
-        self.assertRegex(row1[2], r"^\d{2}-\d{2}$")  # due MM-DD
-        self.assertEqual(row1[3], "已闭环")  # status
-        self.assertEqual(row1[4], "5")  # score
+        tables = [e for e in _SENT[0]["card"]["body"]["elements"] if e.get("tag") == "table"]
+        # 原生 table 一张,3 data rows（按负责人分组：张三两条在前、李四一条）
+        self.assertEqual(len(tables), 1)
+        rows = tables[0]["rows"]
+        self.assertEqual(len(rows), 3)
+        row1 = rows[0]
+        self.assertEqual(row1["c0"], "大目标1")  # level
+        self.assertEqual(row1["c1"], "目标A")  # title
+        self.assertRegex(row1["c2"], r"^\d{2}-\d{2}$")  # due MM-DD
+        self.assertEqual(row1["c3"], "已闭环")  # status
+        self.assertEqual(row1["c4"], "5")  # score
 
     def test_overdue_red_and_leave_orange(self):
         _set_up_default_pages()
@@ -272,13 +274,8 @@ class TestTableRowExpansion(unittest.TestCase):
             mentor_open_id="ou_m", mentor_name="赵", cycle_date="2026-08-28",
             ledger_app_token="appX", ledger_table_id="tblCYC",
         )
-        sets = [e for e in _SENT[0]["card"]["body"]["elements"] if e.get("tag") == "column_set"]
-        statuses = [
-            c["elements"][0]["content"]
-            for s in sets[1:]
-            for c in s["columns"]
-            if c["elements"][0]["content"].startswith("<font")
-        ]
+        tables = [e for e in _SENT[0]["card"]["body"]["elements"] if e.get("tag") == "table"]
+        statuses = [r["c3"] for r in tables[0]["rows"] if str(r["c3"]).startswith("<font")]
         self.assertEqual(len(statuses), 2)
         self.assertIn("color='red'", statuses[0])
         self.assertIn("未闭环逾期", statuses[0])
@@ -302,13 +299,8 @@ class TestTableRowExpansion(unittest.TestCase):
             mentor_open_id="ou_m", mentor_name="赵", cycle_date="2026-08-28",
             ledger_app_token="appX", ledger_table_id="tblCYC",
         )
-        sets = [e for e in _SENT[0]["card"]["body"]["elements"] if e.get("tag") == "column_set"]
-        titles = [
-            c["elements"][0]["content"]
-            for s in sets[1:]
-            for c in s["columns"]
-            if c["elements"][0]["content"] in ("A目标", "B事项", "Z事项")
-        ]
+        tables = [e for e in _SENT[0]["card"]["body"]["elements"] if e.get("tag") == "table"]
+        titles = [r["c1"] for r in tables[0]["rows"] if r["c1"] in ("A目标", "B事项", "Z事项")]
         self.assertEqual(titles, ["A目标", "B事项", "Z事项"])  # 张三两条在前,李四在后
 
 

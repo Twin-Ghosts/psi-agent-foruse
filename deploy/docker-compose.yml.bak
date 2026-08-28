@@ -1,0 +1,87 @@
+# psi-agent-auth 部署编排
+#
+# 单机即单点：挂掉则新用户无法注册、老用户 token 过期后无法续。C 端起步可接受，
+# 需配监控与快速重启。将来要高可用换 PG，数据模型不变。
+
+services:
+  auth:
+    build: ..
+    restart: unless-stopped
+    environment:
+      # 供应商凭据只走环境变量，不进任何持久化配置快照
+      AUTH_DB: /data/auth.db
+      # 生产必须为 true，否则会静默跑在 mock 通道上、不真的发信
+      AUTH_USE_REAL_PROVIDERS: ${AUTH_USE_REAL_PROVIDERS:-true}
+      # 必须绑 0.0.0.0：Caddy 是另一个容器，只绑 127.0.0.1 会让它 502。
+      # 不对宿主暴露端口由下方 expose（而非 ports）保证，安全性不受影响。
+      AUTH_BIND: ${AUTH_BIND:-0.0.0.0}
+      # 低频清全表。写入路径也会顺手删本 key 的过期行，两层配合。
+      AUTH_SWEEP_INTERVAL: ${AUTH_SWEEP_INTERVAL:-3600}
+      ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:?required}
+      ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:?required}
+      DYPNS_SIGN_NAME: ${DYPNS_SIGN_NAME:?required}
+      DYPNS_TEMPLATE_CODE: ${DYPNS_TEMPLATE_CODE:?required}
+      RESEND_API_KEY: ${RESEND_API_KEY:?required}
+      RESEND_FROM: ${RESEND_FROM:?required}
+      # 必须显式设置：留空则每次重启都换盐，重启前发出的验证码全部失效
+      EMAIL_CODE_SALT: ${EMAIL_CODE_SALT:?required}
+      INVITATION_REQUIRED: ${INVITATION_REQUIRED:-false}
+    volumes:
+      # SQLite 数据文件必须挂 volume，留在容器层则重建容器即丢库
+      - auth-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    expose:
+      - "8000"
+    # 不映射端口到宿主：只允许经 Caddy 访问
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      auth:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - ./downloads:/srv/downloads:ro
+      - caddy-logs:/var/log/caddy
+    networks:
+      - internal
+
+  # 定时热备：VACUUM INTO 产出一致快照，不能直接 cp（WAL 下 cp 可能拿到坏库）
+  backup:
+    build: ..
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/app/deploy/backup.sh"]
+    environment:
+      AUTH_DB: /data/auth.db
+      BACKUP_DIR: /backups
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-3600}
+      BACKUP_KEEP: ${BACKUP_KEEP:-48}
+    volumes:
+      - auth-data:/data:ro
+      - auth-backups:/backups
+    networks:
+      - internal
+
+volumes:
+  auth-data:
+  auth-backups:
+  caddy-data:
+  caddy-config:
+  caddy-logs:
+
+networks:
+  internal:

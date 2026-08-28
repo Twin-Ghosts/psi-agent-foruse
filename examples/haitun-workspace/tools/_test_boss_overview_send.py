@@ -479,16 +479,19 @@ class TestToolSendFlow(unittest.TestCase):
         self.assertIn("① 张三(赵胜迪)逾期5天", joined)
         self.assertIn("打开公司工作树", joined)
         self.assertIn("https://genuineknowledge.feishu.cn/wiki/WIKIROOT", joined)
-        # 团队表：1 表头 + 2 行
-        sets = [e for e in card["body"]["elements"] if e.get("tag") == "column_set"]
-        self.assertEqual(len(sets), 3)
-        header = [c["elements"][0]["content"] for c in sets[0]["columns"]]
-        self.assertEqual(header, ["**团队**", "**人数**", "**TODO**", "**已闭环**", "**逾期**", "**均分**"])
-        zhao = [c["elements"][0]["content"] for c in sets[1]["columns"]]
-        self.assertEqual(zhao[:5], ["赵胜迪", "1", "1", "1", "1"])
-        self.assertEqual(zhao[5], "5.0")
-        li = [c["elements"][0]["content"] for c in sets[2]["columns"]]
-        self.assertEqual(li, ["李四", "1", "1", "0", "0", "—"])
+        # 团队表：原生 table 一张,2 行
+        tables = [e for e in card["body"]["elements"] if e.get("tag") == "table"]
+        self.assertEqual(len(tables), 1)
+        table = tables[0]
+        self.assertEqual(
+            [c["display_name"] for c in table["columns"]],
+            ["团队", "人数", "TODO", "已闭环", "逾期", "均分"],
+        )
+        zhao = table["rows"][0]
+        self.assertEqual([zhao[f"c{i}"] for i in range(5)], ["赵胜迪", "1", "1", "1", "1"])
+        self.assertEqual(zhao["c5"], "5.0")
+        li = table["rows"][1]
+        self.assertEqual([li[f"c{i}"] for i in range(6)], ["李四", "1", "1", "0", "0", "—"])
 
     def test_empty_cycle_team_zero_row(self):
         # 李四本周期无行 → 零值团队行，团队表行数仍与名单一致
@@ -498,10 +501,10 @@ class TestToolSendFlow(unittest.TestCase):
         self.assertTrue(out["ok"], out.get("error"))
         self.assertEqual(out["row_count"], 2)
         self.assertEqual(out["team_count"], 2)
-        sets = [e for e in _SENT[0]["card"]["body"]["elements"] if e.get("tag") == "column_set"]
-        self.assertEqual(len(sets), 3)
-        li = [c["elements"][0]["content"] for c in sets[2]["columns"]]
-        self.assertEqual(li, ["李四", "0", "0", "0", "0", "—"])
+        tables = [e for e in _SENT[0]["card"]["body"]["elements"] if e.get("tag") == "table"]
+        self.assertEqual(len(tables), 1)
+        li = tables[0]["rows"][1]
+        self.assertEqual([li[f"c{i}"] for i in range(6)], ["李四", "0", "0", "0", "0", "—"])
 
     def test_pagination_merges_per_mentor(self):
         _install_two_mentors()

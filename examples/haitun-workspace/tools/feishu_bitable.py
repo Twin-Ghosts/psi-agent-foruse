@@ -328,3 +328,28 @@ async def feishu_bitable_clear_table(app_token: str, table_id: str, user_key: st
         identity: ``"user"`` / ``"bot"`` — who owns the result (see create_record).
     """
     return _f.dumps_result(await _f.clear_bitable_table_impl(app_token, table_id, user_key, identity))
+
+
+async def feishu_bitable_delete_records(
+    app_token: str,
+    table_id: str,
+    record_ids_json: str,
+    user_key: str = "",
+    identity: str = "",
+) -> str:
+    """Delete specific records (rows) by id from a Feishu bitable table.
+
+    Targeted delete — the counterpart to feishu_bitable_clear_table (which wipes
+    the whole table). Pass the record ids you want gone; deletes in batches of 500.
+    Get record ids from feishu_bitable_search_records. Fields/columns are NOT touched.
+
+    Args:
+        app_token: The base's app_token.
+        table_id: The table's id (``feishu_api`` GET /open-apis/bitable/v1/apps/:app_token/tables).
+        record_ids_json: JSON array of record_id strings, e.g. ``["recABC", "recDEF"]``.
+        user_key: The sender's open_id (from ``<feishu_context>``).
+        identity: ``"user"`` / ``"bot"`` — who owns the result (see create_record).
+    """
+    return _f.dumps_result(
+        await _f.delete_bitable_records_impl(app_token, table_id, record_ids_json, user_key, identity)
+    )

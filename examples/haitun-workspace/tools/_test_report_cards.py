@@ -103,16 +103,17 @@ class TestMentorReportCard(unittest.TestCase):
 
     def test_table_compiles_header_and_rows(self):
         out = _render("mentor-report-card", _mentor_values(), {"rows": _rows(3)})
-        sets = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "column_set"]
-        # 1 header + 3 data rows
-        self.assertEqual(len(sets), 4)
-        header_texts = [c["elements"][0]["content"] for c in sets[0]["columns"]]
-        self.assertEqual(header_texts, ["**层级**", "**标题**", "**截止**", "**状态**", "**打分**"])
-        first_row = sets[1]
-        row_texts = [c["elements"][0]["content"] for c in first_row["columns"]]
-        self.assertEqual(row_texts[0], "目标")
-        self.assertEqual(row_texts[1], "任务0")
-        self.assertEqual(row_texts[3], "闭环")
+        tables = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "table"]
+        self.assertEqual(len(tables), 1)
+        table = tables[0]
+        self.assertEqual(
+            [c["display_name"] for c in table["columns"]],
+            ["层级", "标题", "截止", "状态", "打分"],
+        )
+        self.assertEqual(len(table["rows"]), 3)
+        self.assertEqual(table["rows"][0]["c0"], "目标")
+        self.assertEqual(table["rows"][0]["c1"], "任务0")
+        self.assertEqual(table["rows"][0]["c3"], "闭环")
 
     def test_table_empty_fallback(self):
         out = _render("mentor-report-card", _mentor_values(template="blue"), {"rows": []})
@@ -127,9 +128,10 @@ class TestMentorReportCard(unittest.TestCase):
     def test_table_row_cap(self):
         out = _render("mentor-report-card", _mentor_values(), {"rows": _rows(15)})
         self.assertTrue(out["ok"], out.get("error"))
-        sets = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "column_set"]
-        # header + at most 10 data rows
-        self.assertEqual(len(sets), 1 + 10)
+        tables = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "table"]
+        self.assertEqual(len(tables), 1)
+        # at most 10 data rows
+        self.assertEqual(len(tables[0]["rows"]), 10)
 
     def test_table_truncation_note(self):
         # 超过 max_rows 时表格末尾追加一行截断提示,{n} 替换为总行数。
@@ -163,8 +165,9 @@ class TestMentorReportCard(unittest.TestCase):
             context_json=json.dumps({"rows": [{"a": "1"}, {"a": "2"}, {"a": "3"}]}),
         )
         self.assertTrue(out["ok"], out.get("error"))
-        sets = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "column_set"]
-        self.assertEqual(len(sets), 1 + 2)
+        tables = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "table"]
+        self.assertEqual(len(tables), 1)
+        self.assertEqual(len(tables[0]["rows"]), 2)
         note = [e["content"] for e in out["card"]["body"]["elements"] if e.get("tag") == "markdown"]
         self.assertTrue(any("仅显示前 2 条,共 3 条" in c for c in note))
 
@@ -174,12 +177,13 @@ class TestMentorReportCard(unittest.TestCase):
         self.assertFalse(out["ok"])
         self.assertIn("max_rows", out["error"])
 
-    def test_table_non_dict_row_fails(self):
-        # 行数组混入非对象必须显式报错,不能静默丢行。
+    def test_table_non_dict_row_filtered(self):
+        # 融合后语义:非对象行自动过滤(原生 table 只渲染对象行),不报错不丢 dict 行。
         out = _render("mentor-report-card", _mentor_values(), {"rows": [{"level": "目标"}, "bad"]})
-        self.assertFalse(out["ok"])
-        self.assertIn("row 1", out["error"])
-        self.assertIn("must be an object", out["error"])
+        self.assertTrue(out["ok"], out.get("error"))
+        tables = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "table"]
+        self.assertEqual(len(tables), 1)
+        self.assertEqual(len(tables[0]["rows"]), 1)
 
     def test_divider_present(self):
         out = _render("mentor-report-card", _mentor_values(), {"rows": _rows(1)})
@@ -215,17 +219,15 @@ class TestBossOverviewCard(unittest.TestCase):
         ]
         out = _render("boss-overview-card", _boss_values(), {"teams": teams})
         self.assertTrue(out["ok"], out.get("error"))
-        sets = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "column_set"]
-        self.assertEqual(len(sets), 3)  # header + 2 teams
-        header_texts = [c["elements"][0]["content"] for c in sets[0]["columns"]]
+        tables = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "table"]
+        self.assertEqual(len(tables), 1)  # 原生 table 一张
+        table = tables[0]
         self.assertEqual(
-            header_texts,
-            ["**团队**", "**人数**", "**TODO**", "**已闭环**", "**逾期**", "**均分**"],
+            [c["display_name"] for c in table["columns"]],
+            ["团队", "人数", "TODO", "已闭环", "逾期", "均分"],
         )
-        first_team_cell = next(
-            c["elements"][0]["content"] for c in sets[1]["columns"]
-        )
-        self.assertEqual(first_team_cell, "赵胜迪")
+        self.assertEqual(len(table["rows"]), 2)
+        self.assertEqual(table["rows"][0]["c0"], "赵胜迪")
 
     def test_teams_empty_fallback(self):
         out = _render("boss-overview-card", _boss_values(), {"teams": []})
@@ -237,10 +239,17 @@ class TestBossOverviewCard(unittest.TestCase):
 
 
 class TestTableElementValidation(unittest.TestCase):
-    def test_missing_cols_fails(self):
-        out = _card_dsl.render_card('<card title="t"><table source="rows"/></card>', context_json='{"rows": []}')
-        self.assertFalse(out["ok"])
-        self.assertIn("<col>", out["error"])
+    def test_missing_cols_uses_first_row_fields(self):
+        # 未声明 col 时取首行全部字段作列(融合后的原生 table 语义)。
+        out = _card_dsl.render_card(
+            '<card title="t"><table source="rows"/></card>',
+            context_json='{"rows": [{"a": "1", "b": "2"}]}',
+        )
+        self.assertTrue(out["ok"], out.get("error"))
+        tables = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "table"]
+        self.assertEqual(len(tables), 1)
+        self.assertEqual([c["display_name"] for c in tables[0]["columns"]], ["a", "b"])
+        self.assertEqual(tables[0]["rows"][0], {"c0": "1", "c1": "2"})
 
     def test_col_without_field_fails(self):
         out = _card_dsl.render_card(

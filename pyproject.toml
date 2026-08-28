@@ -101,7 +101,13 @@ indent-style = "space"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-testpaths = ["tests"]
+# DSL 测试文件用 `_test_*.py` 前缀命名(unittest 直接跑文件名即可),pytest 默认只收
+# test_*.py / *_test.py,不声明这里 CI 的 `uv run pytest -v` 会 0 收集(D04)。
+python_files = ["test_*.py", "*_test.py", "_test_*.py"]
+# DSL 测试住在 examples/haitun-workspace/tools/ 下,testpaths 只指 tests/ 跑不到;
+# pythonpath 让它们能 import 同目录的 _card_dsl / _todo_card_impl / _feishu_impl。
+testpaths = ["tests", "examples/haitun-workspace/tools"]
+pythonpath = ["examples/haitun-workspace/tools"]
 addopts = ["--strict-markers", "-ra", "--cov"]
 markers = ["schedule: schedule-based tests (> 30s)"]
 

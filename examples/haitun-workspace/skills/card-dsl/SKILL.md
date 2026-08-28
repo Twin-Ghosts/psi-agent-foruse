@@ -16,15 +16,18 @@ category: productivity
 |---|---|---|
 | `card` | `title`(必填)/ `template` | 根容器:标题与卡头配色 |
 | `info` | `label` / `value`(必填) | 信息行,如 负责人/截止日期 |
-| `score` | `min`(默认1)/ `max`(默认5)/ `rounds`(默认20)/ `bind-record` / `selected` | 评分按钮组,点选即回调,可多轮改分 |
-| `comment` | `placeholder` / `bind-record` | 评语输入框(引擎自动配「确认」按钮,点确认才回传文字) |
+| `score` | `min`(默认1)/ `max`(默认5)/ `rounds`(默认20)/ `bind-record` / `bind-field` / `selected` | 评分按钮组,点选即回调,可多轮改分;声明 `bind-field` 则选中值自动写回台账该字段 |
+| `comment` | `placeholder` / `bind-record` / `confirm-title` / `confirm-text` | 评语输入框(引擎自动配「确认」按钮,点确认才回传文字;确认弹窗文案可覆盖,缺省为评语措辞) |
 | `action-row` | — | 按钮行容器 |
-| `button` | `text` / `type` / `action`(必填) | 动作按钮 |
+| `button` | `text` / `type` / `action`(必填)/ `confirm` / `confirm-title` | 动作按钮;声明 `confirm` 则点击弹二次确认(打回/删除等危险操作) |
+| `divider` | — | 分割线(飞书 2.0 hr,纯排版,实卡验证通过) |
+| `img` | `img-key`(必填)/ `alt` | 图片(飞书 2.0 img,img-key 为上传素材返回的 key,实卡验证通过) |
+| `date` | `action`(必填)/ `placeholder` / `initial-date` / `bind-record` / `bind-field` | 日期选择器(飞书 2.0 date_picker);选中日期回传在回调 `action.option`,声明 `bind-field` 则写回台账;实卡验证通过 |
+| `select` | `action`(必填)/ `placeholder` / `bind-record` / `bind-field`,子元素 `option`(`text`/`value`) | 下拉单选(飞书 2.0 select_static);选中值回传在回调 `action.option`,声明 `bind-field` 则写回台账;实卡验证通过 |
 | `list` | `shape`(默认circle) | 待办列表(todo 卡):多行逐条勾选,子元素 `row` |
 | `row` | `title`(必填)/ `task-guid` / `detail` / `shape` / `bind-record` / `done` | 一行待办;`done="true"` 的行发卡时即只读(无按钮) |
-| `table` | `source`(默认rows)/ `empty` / `more` / `max_rows` | 只读表格(报表卡/统计卡):子元素 `col`;行数据由调用方预取注入 context,单屏截断 `max_rows`(默认 10)行,超出时末尾追加 `more` 提示行(`{n}` 替换为总行数),空表渲染 empty 文案;行数组元素必须是对象,否则显式报错 |
-| `col` | `field`(必填)/ `label` / `width` | 表格列:field 是行数据里的键,label 是表头,width 是列宽权重(1-5 或 auto) |
-| `divider` | — | 分割线,区块分隔(纯展示) |
+| `table` | `source`(默认rows)/ `empty` / `more` / `max_rows` | 只读表格(报表卡/统计卡):子元素 `col`(可选,缺省取首行全部字段);行数据由调用方预取注入 context,用飞书 2.0 原生 table 渲染真表格,单屏截断 `max_rows`(默认 10)行,超出时末尾追加 `more` 提示行(`{n}` 替换为总行数),空表渲染 empty 文案;非对象行自动过滤 |
+| `col` | `field`(必填)/ `label` / `width` | 表格列:field 是行数据(或其 fields)里的键,label 是表头(缺省=field),width 是列宽权重(1-5 或 auto) |
 
 `template` 取值与配色:`blue`(普通)/ `green`(成功、完成态)/ `red`(告警、逾期)/ `grey`(归档、只读)。
 `button type` 语义色(业务只写语义,不写颜色):`accept` 通过→蓝(绿是设计意图,飞书按钮暂无绿色);

@@ -34,11 +34,13 @@ import _feishu_api_impl as _api
 import _feishu_impl as _f
 from _card_dsl import render_template
 from _feishu.bitable import _as_field_map, _build_update_record_request
-from _todo_card_impl import _parse_card_state, _prepare_row_transition
+from _todo_card_impl import _UNDO_ROUNDS, _parse_card_state, _prepare_row_transition
 
 # 每张评价卡最多支持的重建轮数(分数/评语/打回各预注册 _MAX_ROUNDS 个 action)。
 # 点一次分或确认一次评语消耗一轮;20 轮对单条 todo 的评价往返绰绰有余。
-_MAX_ROUNDS = 20
+# 单一真源 = _todo_card_impl._UNDO_ROUNDS:与 _card_dsl 共用同一上限,不再各写 20,
+# 避免三模块常量漂移导致预注册深度与重建轮次错位(见 strict 套件跨模块一致性断言)。
+_MAX_ROUNDS = _UNDO_ROUNDS
 
 # 测试模式:设了该环境变量时,评价卡发给该 open_id(测试者本人)代替真实 mentor,
 # 严禁把评价卡发到真实 mentor 手上。正式运行(海豚一号服务器)不设此变量 → 发真 mentor。
@@ -141,6 +143,26 @@ def _round_of(action: str) -> int:
         return 0
 
 
+def _round_of_value(value: dict[str, Any]) -> int:
+    """Recover the current round from a callback value.
+
+    The engine writes ``value["round"]`` (int) alongside ``value["action"]``
+    (``{action}_r{round}``). Prefer the int; fall back to parsing the action
+    name. A rebuild renders ``this + 1`` so the next click gets a fresh action
+    name and clears the Channel ``(message_id, action)`` tombstone.
+    """
+    if not isinstance(value, dict):
+        return 0
+    raw = value.get("round")
+    if isinstance(raw, bool):  # bool is an int subclass; a stray True must not read as round 1
+        return 0
+    if isinstance(raw, int) and raw >= 0:
+        return raw
+    if isinstance(raw, str) and raw.strip().isdigit():
+        return int(raw.strip())
+    return _round_of(value.get("action") if isinstance(value.get("action"), str) else "")
+
+
 def _card_comment_value(payload: dict[str, Any]) -> str:
     """Recover the comment input's current text from the click-time card snapshot.
 
@@ -206,6 +228,7 @@ async def _handle_score_select(card_action_json: str, user_key: str = "") -> dic
     table_id = str(value.get("ledger_table_id") or "").strip() or "tblyPdcD9qzvAMGU"
     score_raw = value.get("score")
     selected_score = int(score_raw) if isinstance(score_raw, int) and 1 <= score_raw <= 5 else 0
+    next_round = _round_of_value(value) + 1
 
     ledger_result: dict[str, Any] = {"ok": True, "skipped": "no score"}
     if selected_score:
@@ -223,6 +246,9 @@ async def _handle_score_select(card_action_json: str, user_key: str = "") -> dic
 
     try:
         # 重建走通用 DSL 模板:点分时把输入框当前文本带回,不丢已写评语。
+        # 轮次必须 +1(见 _render_review_card 的 round_ 说明):否则重建后的
+        # 分数按钮 action 名与已消费的相同,再点会被逐 action 墓碑拒绝——
+        # 实卡即「评分选完无法修改」。+1 后每次点分都是全新 action,可改分。
         card, _ = _render_review_card(
             record_id=record_id,
             title=title,
@@ -234,6 +260,7 @@ async def _handle_score_select(card_action_json: str, user_key: str = "") -> dic
             comment_value=_card_comment_value(payload),
             ledger_app_token=app_token,
             ledger_table_id=table_id,
+            round_=next_round,
         )
     except RuntimeError as e:
         return {"ok": False, "error": f"{e}"}
@@ -318,10 +345,13 @@ async def _handle_review_input(card_action_json: str, user_key: str = "") -> dic
     task_guid = str(value.get("task_guid") or "").strip()
     score_raw = value.get("score")
     selected_score = int(score_raw) if isinstance(score_raw, int) and 1 <= score_raw <= 5 else 0
+    next_round = _round_of_value(value) + 1
     kept_comment = comment or _card_comment_value(payload)
     if message_id:
         try:
             # 评语确认后重建:走通用 DSL 模板,把本次提交的评语带回输入框。
+            # 轮次 +1(见 _render_review_card):确认消费了 review_input_r{n},
+            # 重建若停在同轮,输入框的确认按钮将永远点不动。
             rebuilt, _ = _render_review_card(
                 record_id=record_id,
                 title=title,
@@ -333,6 +363,7 @@ async def _handle_review_input(card_action_json: str, user_key: str = "") -> dic
                 comment_value=kept_comment,
                 ledger_app_token=app_token,
                 ledger_table_id=table_id,
+                round_=next_round,
             )
         except RuntimeError as e:
             card_result = {"ok": False, "error": f"{e}"}
@@ -500,10 +531,13 @@ async def _handle_review_reject(card_action_json: str, user_key: str = "") -> di
     cycle_date = str(value.get("cycle_date") or "").strip()
     score_raw = value.get("score")
     selected_score = int(score_raw) if isinstance(score_raw, int) and 1 <= score_raw <= 5 else 0
+    next_round = _round_of_value(value) + 1
     card_result: dict[str, Any] = {"ok": True, "skipped": "no rebuild info"}
     if message_id:
         try:
             # 打回重建:走通用 DSL 模板,note 渲染成「状态:已打回重做…」信息行。
+            # 轮次 +1(见 _render_review_card):否则打回按钮 action 名与已消费的
+            # 相同,第二次「打回」会被墓碑拦截——实卡即「步骤3无法撤回」。
             rebuilt, _ = _render_review_card(
                 record_id=record_id,
                 title=title,
@@ -516,6 +550,7 @@ async def _handle_review_reject(card_action_json: str, user_key: str = "") -> di
                 ledger_app_token=app_token,
                 ledger_table_id=table_id,
                 note=("已打回重做——任务已回到进行中,执行人重新完成后会再发一张新的评价卡。"),
+                round_=next_round,
             )
         except RuntimeError as e:
             card_result = {"ok": False, "error": f"{e}"}
@@ -581,12 +616,23 @@ def _render_review_card(
     ledger_app_token: str = "",
     ledger_table_id: str = "",
     note: str = "",
+    round_: int = 0,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     """Render the review card through the card-dsl template (发卡与重建共用).
 
     One template serves both the send path (``_send_review_card``) and every
     rebuild (score pick / comment confirm / reject) — values fill the card
     body, context fills the callback values. Returns ``(card, handlers)``.
+
+    ``round_`` is load-bearing for rebuilds: Feishu consumes each action id
+    once, so a rebuild at the same round would re-emit the already-consumed
+    ``{action}_r{n}`` names and the next click would be tombstone-rejected
+    ("评分选完无法修改"). The send path renders round 0; every rebuild must
+    pass the *next* round (``_round_of_value(value) + 1``) so every button on
+    the rebuilt card gets a fresh, un-consumed action name — otherwise the
+    Channel dedup key ``(message_id, value.action)`` (multi_use tombstone)
+    rejects the second click as already-consumed, silently dropping re-scores
+    / re-confirms / repeat rejects.
     """
     rendered = render_template(
         "review-card",
@@ -613,6 +659,7 @@ def _render_review_card(
             },
             ensure_ascii=False,
         ),
+        round_=round_,
     )
     if not rendered.get("ok"):
         raise RuntimeError(rendered.get("error") or "dsl render failed")
@@ -651,7 +698,7 @@ async def _send_review_card(value: dict[str, Any], title: str, task_guid: str, u
         owner_name = str(user_key or "该成员")
     cycle_date_raw = fields.get("周期日期")
     cycle_date = ""
-    if isinstance(cycle_date_raw, (int, float)) and cycle_date_raw:
+    if isinstance(cycle_date_raw, int | float) and cycle_date_raw:
         # Bitable date fields arrive as epoch milliseconds.
         try:
             cycle_date = datetime.datetime.fromtimestamp(int(cycle_date_raw) / 1000).strftime("%Y-%m-%d")

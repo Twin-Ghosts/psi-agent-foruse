@@ -1,0 +1,51 @@
+# psi-agent-auth 的反向代理与安装包分发
+#
+# Caddy 自动申请并续期 Let's Encrypt 证书：DNS 指向本机即可，HTTPS 零配置。
+# 前提：80 与 443 端口可从公网访问（ACME HTTP-01 校验要用 80）。
+
+auth.example.com {
+	# 认证 API
+	handle /api/auth/* {
+		reverse_proxy auth:8000 {
+			# 让服务看到真实客户端 IP。不传这个头，服务只能看到 Caddy 的地址，
+			# 于是**所有用户共用一个限频桶**，send_per_ip 形同虚设。
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# 测试钩子绝不能暴露到公网：它会回显验证码
+	handle /__test__/* {
+		respond 404
+	}
+
+	# 安装包分发挂在同一个 Caddy 上，C 端下载页少依赖一层 CDN 配置
+	handle_path /downloads/* {
+		root * /srv/downloads
+		file_server browse
+	}
+
+	handle {
+		respond "psi-agent auth service" 200
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# 不回显服务器版本
+		-Server
+	}
+
+	encode gzip
+
+	log {
+		output file /var/log/caddy/auth.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		# 日志不打印完整手机号 / 邮箱 / 验证码：请求体不记录，query 也不记录
+		format json
+	}
+}
