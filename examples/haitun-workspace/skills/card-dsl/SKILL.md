@@ -22,7 +22,7 @@ category: productivity
 | `button` | `text` / `type` / `action`(必填) | 动作按钮 |
 | `list` | `shape`(默认circle) | 待办列表(todo 卡):多行逐条勾选,子元素 `row` |
 | `row` | `title`(必填)/ `task-guid` / `detail` / `shape` / `bind-record` / `done` | 一行待办;`done="true"` 的行发卡时即只读(无按钮) |
-| `table` | `source`(默认rows)/ `empty` | 只读表格(报表卡/统计卡):子元素 `col`;行数据由调用方预取注入 context,单屏截断 10 行,空表渲染 empty 文案 |
+| `table` | `source`(默认rows)/ `empty` / `more` / `max_rows` | 只读表格(报表卡/统计卡):子元素 `col`;行数据由调用方预取注入 context,单屏截断 `max_rows`(默认 10)行,超出时末尾追加 `more` 提示行(`{n}` 替换为总行数),空表渲染 empty 文案;行数组元素必须是对象,否则显式报错 |
 | `col` | `field`(必填)/ `label` / `width` | 表格列:field 是行数据里的键,label 是表头,width 是列宽权重(1-5 或 auto) |
 | `divider` | — | 分割线,区块分隔(纯展示) |
 

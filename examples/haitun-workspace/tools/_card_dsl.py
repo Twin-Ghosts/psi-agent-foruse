@@ -160,9 +160,23 @@ def _table_block(element: ET.Element, context: dict[str, Any]) -> list[dict[str,
     (调用方可写 **加粗** 或 <font color='red'> 标红,引擎不解析不转义)。
     空表渲染 empty 文案,不报错。行数据默认从 context["rows"] 读,
     <table source="..."> 可改名(如 boss 卡的 teams)。
+    <table max_rows="N"> 覆盖默认单屏上限(默认 10);行数超过上限时表格
+    末尾追加一行截断提示(<table more="..."> 自定义文案,{n} 替换为总行数)。
+    行数组元素必须是对象,出现其它类型直接报错而非静默跳过,让调用方
+    传错形状时立刻可见。
     """
     source = (element.get("source") or "rows").strip()
     empty = (element.get("empty") or "暂无数据").strip()
+    more = (element.get("more") or "共 {n} 行,完整数据见台账").strip()
+    raw_max = (element.get("max_rows") or "").strip()
+    max_rows = _TABLE_MAX_ROWS
+    if raw_max:
+        try:
+            max_rows = int(raw_max)
+            if max_rows < 1:
+                raise ValueError
+        except ValueError:
+            raise ValueError(f"<table> max_rows must be a positive integer, got {raw_max!r}")
     cols: list[dict[str, str]] = []
     for col in element:
         if col.tag != "col":
@@ -182,6 +196,9 @@ def _table_block(element: ET.Element, context: dict[str, Any]) -> list[dict[str,
     rows = context.get(source)
     if not isinstance(rows, list) or not rows:
         return [{"tag": "markdown", "content": f"_{empty}_"}]
+    for idx, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise ValueError(f"<table> row {idx} must be an object, got {type(row).__name__}")
     blocks: list[dict[str, Any]] = []
     header_columns: list[dict[str, Any]] = []
     for col in cols:
@@ -201,9 +218,7 @@ def _table_block(element: ET.Element, context: dict[str, Any]) -> list[dict[str,
             "columns": header_columns,
         }
     )
-    for row in rows[: _TABLE_MAX_ROWS]:
-        if not isinstance(row, dict):
-            continue
+    for row in rows[:max_rows]:
         row_columns: list[dict[str, Any]] = []
         for col in cols:
             raw = row.get(col["field"])
@@ -223,6 +238,10 @@ def _table_block(element: ET.Element, context: dict[str, Any]) -> list[dict[str,
                 "background_style": "default",
                 "columns": row_columns,
             }
+        )
+    if len(rows) > max_rows:
+        blocks.append(
+            {"tag": "markdown", "content": f"_{more.replace('{n}', str(len(rows)))}_"}
         )
     return blocks
 

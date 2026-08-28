@@ -127,6 +127,56 @@ class TestMentorReportCard(unittest.TestCase):
         # header + at most 10 data rows
         self.assertEqual(len(sets), 1 + 10)
 
+    def test_table_truncation_note(self):
+        # 超过 max_rows 时表格末尾追加一行截断提示,{n} 替换为总行数。
+        out = _render("mentor-report-card", _mentor_values(), {"rows": _rows(15)})
+        self.assertTrue(out["ok"], out.get("error"))
+        notes = [
+            e["content"]
+            for e in out["card"]["body"]["elements"]
+            if e.get("tag") == "markdown" and "共 15 行" in e.get("content", "")
+        ]
+        self.assertEqual(len(notes), 1)
+        # 未超过上限时不出现提示行。
+        out2 = _render("mentor-report-card", _mentor_values(), {"rows": _rows(10)})
+        self.assertTrue(out2["ok"], out2.get("error"))
+        notes2 = [
+            e for e in out2["card"]["body"]["elements"]
+            if e.get("tag") == "markdown" and "共 " in e.get("content", "")
+        ]
+        self.assertEqual(notes2, [])
+
+    def test_table_max_rows_override(self):
+        xml = """
+        <card title="t" template="blue">
+          <table source="rows" max_rows="2" more="仅显示前 2 条,共 {n} 条">
+            <col field="a" label="A"/>
+          </table>
+        </card>
+        """
+        out = _card_dsl.render_card(
+            xml,
+            context_json=json.dumps({"rows": [{"a": "1"}, {"a": "2"}, {"a": "3"}]}),
+        )
+        self.assertTrue(out["ok"], out.get("error"))
+        sets = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "column_set"]
+        self.assertEqual(len(sets), 1 + 2)
+        note = [e["content"] for e in out["card"]["body"]["elements"] if e.get("tag") == "markdown"]
+        self.assertTrue(any("仅显示前 2 条,共 3 条" in c for c in note))
+
+    def test_table_bad_max_rows_fails(self):
+        xml = '<card title="t"><table max_rows="abc"><col field="a"/></table></card>'
+        out = _card_dsl.render_card(xml, context_json='{"rows": [{"a": "1"}]}')
+        self.assertFalse(out["ok"])
+        self.assertIn("max_rows", out["error"])
+
+    def test_table_non_dict_row_fails(self):
+        # 行数组混入非对象必须显式报错,不能静默丢行。
+        out = _render("mentor-report-card", _mentor_values(), {"rows": [{"level": "目标"}, "bad"]})
+        self.assertFalse(out["ok"])
+        self.assertIn("row 1", out["error"])
+        self.assertIn("must be an object", out["error"])
+
     def test_divider_present(self):
         out = _render("mentor-report-card", _mentor_values(), {"rows": _rows(1)})
         hrs = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "hr"]

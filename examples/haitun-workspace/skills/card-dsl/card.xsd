@@ -127,7 +127,9 @@
 
   <!-- 只读表格:报表卡/统计卡的明细与维度展示。行数据由调用方预取注入
        context(source 指定的键,默认 rows),引擎编译为 column_set 网格
-       (飞书卡片无原生 table),单屏截断 10 行。空表渲染 empty 文案。 -->
+       (飞书卡片无原生 table),单屏截断 max_rows(默认 10)行,超出时表格
+       末尾追加 more 提示行({n} 替换为总行数)。空表渲染 empty 文案。
+       行数组元素必须是对象,否则引擎显式报错。 -->
   <xs:element name="table">
     <xs:complexType>
       <xs:sequence>
@@ -135,6 +137,8 @@
       </xs:sequence>
       <xs:attribute name="source" type="xs:string" default="rows"/>
       <xs:attribute name="empty" type="xs:string" default="暂无数据"/>
+      <xs:attribute name="more" type="xs:string" default="共 {n} 行,完整数据见台账"/>
+      <xs:attribute name="max_rows" type="xs:positiveInteger" default="10"/>
     </xs:complexType>
   </xs:element>
 
