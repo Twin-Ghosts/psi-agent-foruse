@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001  # 中文全角标点是刻意排版,非歧义字符
 """Standalone unit tests for the report-card templates and the <table>/<divider> elements.
 
 Covers the two new fixed card types (``mentor-report-card`` / ``boss-overview-card``)
@@ -118,7 +119,10 @@ class TestMentorReportCard(unittest.TestCase):
         self.assertTrue(out["ok"], out.get("error"))
         sets = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "column_set"]
         self.assertEqual(sets, [])
-        self.assertTrue(any("本周期暂无明细" in e["content"] for e in out["card"]["body"]["elements"] if e.get("tag") == "markdown"))
+        self.assertTrue(
+            any("本周期暂无明细" in e["content"] for e in out["card"]["body"]["elements"]
+                if e.get("tag") == "markdown")
+        )
 
     def test_table_row_cap(self):
         out = _render("mentor-report-card", _mentor_values(), {"rows": _rows(15)})
@@ -214,13 +218,22 @@ class TestBossOverviewCard(unittest.TestCase):
         sets = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "column_set"]
         self.assertEqual(len(sets), 3)  # header + 2 teams
         header_texts = [c["elements"][0]["content"] for c in sets[0]["columns"]]
-        self.assertEqual(header_texts, ["**团队**", "**人数**", "**TODO**", "**已闭环**", "**逾期**", "**均分**"])
-        self.assertEqual([c["elements"][0]["content"] for c in sets[1]["columns"]][0], "赵胜迪")
+        self.assertEqual(
+            header_texts,
+            ["**团队**", "**人数**", "**TODO**", "**已闭环**", "**逾期**", "**均分**"],
+        )
+        first_team_cell = next(
+            c["elements"][0]["content"] for c in sets[1]["columns"]
+        )
+        self.assertEqual(first_team_cell, "赵胜迪")
 
     def test_teams_empty_fallback(self):
         out = _render("boss-overview-card", _boss_values(), {"teams": []})
         self.assertTrue(out["ok"], out.get("error"))
-        self.assertTrue(any("暂无团队数据" in e["content"] for e in out["card"]["body"]["elements"] if e.get("tag") == "markdown"))
+        self.assertTrue(
+            any("暂无团队数据" in e["content"]
+                for e in out["card"]["body"]["elements"] if e.get("tag") == "markdown")
+        )
 
 
 class TestTableElementValidation(unittest.TestCase):

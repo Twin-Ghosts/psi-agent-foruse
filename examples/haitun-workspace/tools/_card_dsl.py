@@ -176,7 +176,9 @@ def _table_block(element: ET.Element, context: dict[str, Any]) -> list[dict[str,
             if max_rows < 1:
                 raise ValueError
         except ValueError:
-            raise ValueError(f"<table> max_rows must be a positive integer, got {raw_max!r}")
+            raise ValueError(
+                f"<table> max_rows must be a positive integer, got {raw_max!r}"
+            ) from None
     cols: list[dict[str, str]] = []
     for col in element:
         if col.tag != "col":
@@ -447,7 +449,8 @@ def _compile(
         elif tag == "divider":
             elements.append(_divider_block())
         else:
-            raise ValueError(f"unknown element <{tag}> — vocabulary: info/score/comment/action-row/list/table/divider under <card>")
+            vocab = "info/score/comment/action-row/list/table/divider"
+            raise ValueError(f"unknown element <{tag}> — vocabulary: {vocab} under <card>")
 
     card: dict[str, Any] = {
         "schema": "2.0",
