@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import types
+import typing
 import unittest
 from typing import Any
 
@@ -264,6 +265,158 @@ class TestMaxRoundsSingleSource(unittest.TestCase):
     def test_card_dsl_ceiling_sourced_from_undo_rounds(self):
         # _MAX_ROUNDS = _UNDO_ROUNDS(单一真源);stub 里 _UNDO_ROUNDS=20。
         self.assertEqual(_card_dsl._MAX_ROUNDS, _impl._UNDO_ROUNDS)
+
+
+# ── 8. divider 元素(飞书 2.0 hr,实卡验证通过)─────────────────────────────────
+class TestDivider(unittest.TestCase):
+    def test_divider_compiles_to_hr(self):
+        out = _card_dsl.render_card(
+            '<card title="t"><info label="a" value="b"/><divider/>'
+            '<info label="c" value="d"/></card>'
+        )
+        self.assertTrue(out["ok"], out.get("error"))
+        tags = [e["tag"] for e in out["card"]["body"]["elements"]]
+        self.assertEqual(tags, ["markdown", "hr", "markdown"])
+
+    def test_note_is_rejected_as_unknown(self):
+        # note 在飞书 2.0 已移除,不在词汇表内,应 fail-closed(而非编译出脏卡)。
+        out = _card_dsl.render_card('<card title="t"><note text="x"/></card>')
+        self.assertFalse(out["ok"])
+        self.assertIn("unknown element", out["error"])
+
+
+# ── 9. 新增交互/展示元素(button confirm / img / date / select),实卡验证通过 ──
+class TestNewElements(unittest.TestCase):
+    def _first(self, card, tag):
+        def walk(n):
+            if isinstance(n, dict):
+                if n.get("tag") == tag:
+                    yield n
+                for v in n.values():
+                    yield from walk(v)
+            elif isinstance(n, list):
+                for v in n:
+                    yield from walk(v)
+        return next(walk(card), None)
+
+    def test_button_confirm(self):
+        out = _card_dsl.render_card(
+            '<card title="t"><action-row>'
+            '<button text="打回" type="reject" action="review_reject" '
+            'confirm="确定打回?" confirm-title="确认打回"/></action-row></card>'
+        )
+        self.assertTrue(out["ok"], out.get("error"))
+        btn = self._first(out["card"], "button")
+        self.assertEqual(btn["confirm"]["title"]["content"], "确认打回")
+        self.assertEqual(btn["confirm"]["text"]["content"], "确定打回?")
+
+    def test_button_without_confirm_has_no_confirm_field(self):
+        out = _card_dsl.render_card(
+            '<card title="t"><action-row><button text="x" action="review_reject"/></action-row></card>'
+        )
+        self.assertNotIn("confirm", self._first(out["card"], "button"))
+
+    def test_img_requires_key(self):
+        out = _card_dsl.render_card('<card title="t"><img alt="x"/></card>')
+        self.assertFalse(out["ok"])
+        self.assertIn("img-key", out["error"])
+
+    def test_img_compiles(self):
+        out = _card_dsl.render_card('<card title="t"><img img-key="img_v3_x" alt="图"/></card>')
+        self.assertTrue(out["ok"], out.get("error"))
+        img = self._first(out["card"], "img")
+        self.assertEqual(img["img_key"], "img_v3_x")
+
+    def test_date_picker(self):
+        out = _card_dsl.render_card(
+            '<card title="t"><date action="pick_date" placeholder="选日期"/></card>',
+            handler_overrides_json='{"pick_date":"h"}',
+        )
+        self.assertTrue(out["ok"], out.get("error"))
+        dp = self._first(out["card"], "date_picker")
+        self.assertEqual(dp["behaviors"][0]["value"]["action"], "pick_date_r0")
+        self.assertIn("pick_date_r0", out["handlers"])
+
+    def test_date_requires_action(self):
+        out = _card_dsl.render_card('<card title="t"><date placeholder="x"/></card>')
+        self.assertFalse(out["ok"])
+        self.assertIn("action", out["error"])
+
+    def test_select_with_options(self):
+        out = _card_dsl.render_card(
+            '<card title="t"><select action="pick" placeholder="选">'
+            '<option text="甲" value="a"/><option text="乙" value="b"/></select></card>',
+            handler_overrides_json='{"pick":"h"}',
+        )
+        self.assertTrue(out["ok"], out.get("error"))
+        sel = self._first(out["card"], "select_static")
+        self.assertEqual([o["value"] for o in sel["options"]], ["a", "b"])
+        self.assertIn("pick_r0", out["handlers"])
+
+    def test_select_needs_at_least_one_option(self):
+        out = _card_dsl.render_card(
+            '<card title="t"><select action="pick"/></card>', handler_overrides_json='{"pick":"h"}'
+        )
+        self.assertFalse(out["ok"])
+        self.assertIn("option", out["error"])
+
+    def test_option_requires_text_and_value(self):
+        out = _card_dsl.render_card(
+            '<card title="t"><select action="pick"><option text="甲"/></select></card>',
+            handler_overrides_json='{"pick":"h"}',
+        )
+        self.assertFalse(out["ok"])
+
+
+# ── 10. table 元素:Bitable 数据 → 飞书原生 table 组件(实卡验证通过)──────────
+class TestTableElement(unittest.TestCase):
+    ROWS: typing.ClassVar = [
+        {"record_id": "r1", "fields": {"任务": "A", "负责人": "张三", "标签": [{"text": "高优"}, {"text": "本周"}]}},
+        {"record_id": "r2", "fields": {"任务": "B", "负责人": "李四", "标签": [{"text": "常规"}]}},
+    ]
+
+    def _table(self, card):
+        return next(e for e in card["body"]["elements"] if e.get("tag") == "table")
+
+    def test_renders_native_table_with_columns_and_rows(self):
+        out = _card_dsl.render_card(
+            '<card title="t"><table source="rows">'
+            '<col field="任务" label="任务"/><col field="负责人" label="负责人"/>'
+            '<col field="标签" label="标签"/></table></card>',
+            context_json=json.dumps({"rows": self.ROWS}, ensure_ascii=False),
+        )
+        self.assertTrue(out["ok"], out.get("error"))
+        tbl = self._table(out["card"])
+        self.assertEqual([c["display_name"] for c in tbl["columns"]], ["任务", "负责人", "标签"])
+        self.assertEqual(len(tbl["rows"]), 2)
+        # 数组字段(多选)拼成顿号分隔文本
+        self.assertEqual(tbl["rows"][0]["c2"], "高优、本周")
+
+    def test_empty_source_shows_empty_text(self):
+        out = _card_dsl.render_card(
+            '<card title="t"><table source="rows" empty="本周无任务">'
+            '<col field="任务"/></table></card>',
+            context_json='{"rows":[]}',
+        )
+        self.assertTrue(out["ok"], out.get("error"))
+        md = [e for e in out["card"]["body"]["elements"] if e.get("tag") == "markdown"]
+        self.assertTrue(any("本周无任务" in e["content"] for e in md))
+
+    def test_col_only_holds_col(self):
+        out = _card_dsl.render_card(
+            '<card title="t"><table source="rows"><info label="a" value="b"/></table></card>',
+            context_json=json.dumps({"rows": self.ROWS}, ensure_ascii=False),
+        )
+        self.assertFalse(out["ok"])
+        self.assertIn("col", out["error"])
+
+    def test_missing_field_cell_is_dash(self):
+        out = _card_dsl.render_card(
+            '<card title="t"><table source="rows"><col field="不存在字段"/></table></card>',
+            context_json=json.dumps({"rows": self.ROWS}, ensure_ascii=False),
+        )
+        self.assertTrue(out["ok"], out.get("error"))
+        self.assertEqual(self._table(out["card"])["rows"][0]["c0"], "—")
 
 
 if __name__ == "__main__":

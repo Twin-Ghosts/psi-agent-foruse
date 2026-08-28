@@ -176,6 +176,68 @@ def _markdown_line(label: str, value: str) -> dict[str, Any]:
     return {"tag": "markdown", "content": f"**{label}**：{value}"}  # noqa: RUF001 (卡片文案使用全角标点)
 
 
+def _table_blocks(element: ET.Element, context: dict[str, Any]) -> list[dict[str, Any]]:
+    """把预取的 Bitable 行渲染成卡片块(引擎不做 I/O,行数据来自 context)。
+
+    ``<table source="rows" empty="暂无数据"><col field="标题" label="任务"/>...</table>``
+    - ``source``:context 里的键,值应是 [{fields:{...}} 或 {...}] 的行数组
+      (search_bitable_records_impl 返回的 records 形状:每项 {record_id, fields})。
+    - ``<col field label>``:取每行 fields[field] 显示成 "**label**:值",
+      未声明 col 时显示该行所有字段。
+    - 行与行之间插 hr 分隔;空数据显示 ``empty`` 文案。
+    行数据是调用方预取注入的,故引擎保持纯函数、可离线测。
+    """
+    source = (element.get("source") or "rows").strip()
+    empty_text = (element.get("empty") or "暂无数据").strip()
+    cols: list[tuple[str, str]] = []
+    for col in element:
+        if col.tag != "col":
+            raise ValueError(f"<table> only holds <col>, got <{col.tag}>")
+        field = (col.get("field") or "").strip()
+        if not field:
+            raise ValueError("<col> requires a field attribute")
+        cols.append((field, (col.get("label") or field).strip()))
+    raw = context.get(source)
+    rows = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
+    if not rows:
+        return [_markdown_line("提示", empty_text)]
+    # 用飞书 2.0 原生 table 组件渲染成真表格(而非 markdown 文字块)。
+    # 未声明 col 时取首行全部字段作列。列 name 用 c0/c1… 内部名,display_name 显示标签。
+    first = rows[0].get("fields") if isinstance(rows[0].get("fields"), dict) else rows[0]
+    pairs = cols or [(k, k) for k in first]
+    columns = [
+        {"name": f"c{i}", "display_name": label, "data_type": "text", "width": "auto"}
+        for i, (_field, label) in enumerate(pairs)
+    ]
+    table_rows: list[dict[str, Any]] = []
+    for row in rows:
+        fields = row.get("fields") if isinstance(row.get("fields"), dict) else row
+        table_rows.append({f"c{i}": _cell_text(fields.get(field)) for i, (field, _label) in enumerate(pairs)})
+    return [
+        {
+            "tag": "table",
+            "page_size": max(1, min(len(table_rows), 10)),
+            "row_height": "low",
+            "header_style": {"background_style": "grey", "bold": True},
+            "columns": columns,
+            "rows": table_rows,
+        }
+    ]
+
+
+def _cell_text(val: Any) -> str:
+    """把 Bitable 单元格值转成展示文本(字段类型多样:文本/数组/对象)。"""
+    if val is None:
+        return "—"
+    if isinstance(val, list):
+        # 多选/人员/链接等数组字段:取每项的 text/name,回退 str。
+        parts = [str(x.get("text") or x.get("name") or x) if isinstance(x, dict) else str(x) for x in val]
+        return "、".join(p for p in parts if p) or "—"
+    if isinstance(val, dict):
+        return str(val.get("text") or val.get("name") or val)
+    return str(val)
+
+
 def _base_value(element: ET.Element, action: str, score: int, round_: int, context: dict[str, Any]) -> dict[str, Any]:
     """Assemble the callback value shared by one interactive element.
 
@@ -184,9 +246,19 @@ def _base_value(element: ET.Element, action: str, score: int, round_: int, conte
     ``record_id``; context supplies the rest (owner/title/cycle/task_guid/...).
     """
     value: dict[str, Any] = dict(context)
+    # 安全:action/round/action_id/score/bind_field 是引擎自管字段,不容 context 注入
+    # (否则恶意 context 可伪造分数、伪造回写字段、甚至试图篡改动作名破坏墓碑去重)。
+    # 先从 context 副本里剔除这些保留键,再由引擎按元素声明重新赋权威值。
+    for _reserved in ("action", "round", "action_id", "score", "bind_field"):
+        value.pop(_reserved, None)
     bind_record = (element.get("bind-record") or "").strip()
     if bind_record:
         value["record_id"] = bind_record
+    # bind-field:声明要写回的台账字段名,回调侧据此把选中值写进该列(通用回写,
+    # 见 write_back_from_callback)。不声明则元素只回调不落库(保持既有行为)。
+    bind_field = (element.get("bind-field") or "").strip()
+    if bind_field:
+        value["bind_field"] = bind_field
     value["action"] = action
     value["round"] = round_
     if score:
@@ -285,10 +357,72 @@ def _button_element(element: ET.Element, round_: int, context: dict[str, Any], o
     action_id = f"{action}_r{round_}" if occurrence == 0 else f"{action}_{occurrence}_r{round_}"
     value = _base_value(element, f"{action}_r{round_}", 0, round_, context)
     value["action_id"] = action_id
-    return {
+    btn: dict[str, Any] = {
         "tag": "button",
         "text": {"tag": "plain_text", "content": text},
         "type": feishu_type,
+        "behaviors": [{"type": "callback", "value": value}],
+    }
+    # confirm:危险操作(打回/删除)点击弹二次确认,飞书 button 原生 confirm 字段。
+    # 声明 confirm 属性即启用,弹窗正文取该属性;标题可选 confirm-title,缺省"确认操作"。
+    confirm_text = (element.get("confirm") or "").strip()
+    if confirm_text:
+        confirm_title = (element.get("confirm-title") or "确认操作").strip()
+        btn["confirm"] = {
+            "title": {"tag": "plain_text", "content": confirm_title},
+            "text": {"tag": "plain_text", "content": confirm_text},
+        }
+    return btn
+
+
+def _date_picker(element: ET.Element, round_: int, context: dict[str, Any], occurrence: int = 0) -> dict[str, Any]:
+    """Compile <date> into a Feishu 2.0 date_picker (点选即回调)。
+
+    回调契约(实卡实测 2026-08-28):选中日期在回调**顶层 action.option**
+    (形如 "2026-09-02 +0800",另带 action.timezone),不在 value 里——handler
+    取日期读 payload["action"]["option"],value 只承载 action/round/record_id。
+    """
+    action = (element.get("action") or "").strip()
+    placeholder = (element.get("placeholder") or "选择日期").strip()
+    value = _base_value(element, f"{action}_r{round_}", 0, round_, context)
+    value["action_id"] = f"{action}_r{round_}" if occurrence == 0 else f"{action}_{occurrence}_r{round_}"
+    picker: dict[str, Any] = {
+        "tag": "date_picker",
+        "placeholder": {"tag": "plain_text", "content": placeholder},
+        "behaviors": [{"type": "callback", "value": value}],
+    }
+    initial = (element.get("initial-date") or "").strip()
+    if initial:
+        picker["initial_date"] = initial
+    return picker
+
+
+def _select_static(element: ET.Element, round_: int, context: dict[str, Any], occurrence: int = 0) -> dict[str, Any]:
+    """Compile <select> + <option> children into a Feishu 2.0 select_static。
+
+    回调契约(实卡实测 2026-08-28):选中项的 value 在回调**顶层 action.option**
+    (即被选 <option> 的 value 属性),不在 behaviors.value 里——handler 取选项读
+    payload["action"]["option"],value 只承载 action/round/record_id。
+    """
+    action = (element.get("action") or "").strip()
+    placeholder = (element.get("placeholder") or "请选择").strip()
+    options: list[dict[str, Any]] = []
+    for opt in element:
+        if opt.tag != "option":
+            raise ValueError(f"<select> only holds <option>, got <{opt.tag}>")
+        text = (opt.get("text") or "").strip()
+        opt_value = (opt.get("value") or "").strip()
+        if not text or not opt_value:
+            raise ValueError("<option> requires text and value attributes")
+        options.append({"text": {"tag": "plain_text", "content": text}, "value": opt_value})
+    if not options:
+        raise ValueError("<select> requires at least one <option>")
+    value = _base_value(element, f"{action}_r{round_}", 0, round_, context)
+    value["action_id"] = f"{action}_r{round_}" if occurrence == 0 else f"{action}_{occurrence}_r{round_}"
+    return {
+        "tag": "select_static",
+        "placeholder": {"tag": "plain_text", "content": placeholder},
+        "options": options,
         "behaviors": [{"type": "callback", "value": value}],
     }
 
@@ -439,8 +573,57 @@ def _compile(
                     "columns": columns,
                 }
             )
+        elif tag == "table":
+            # 多维表格数据 → 卡片:引擎不做 I/O(保持纯净可离线测),行数据由调用方
+            # 用 search_bitable_records 预取后注入 context[source]。<col field label>
+            # 声明要展示哪些字段、显示成什么标签。每行渲成一个 markdown 块 + 分隔线。
+            elements.extend(_table_blocks(child, context))
+        elif tag == "divider":
+            # 分割线:飞书 2.0 原生 hr,纯排版无交互。实卡验证通过(2026-08-27)。
+            elements.append({"tag": "hr"})
+        elif tag == "img":
+            # 图片:飞书 2.0 原生 img,需 img-key(上传素材后飞书返回的 key)。
+            # 实测飞书接受 img 元素格式(假 key 报 200570 invalid image key,非
+            # unsupported tag),故格式有效;真实渲染需业务传入真 img-key。
+            img_key = (child.get("img-key") or "").strip()
+            if not img_key:
+                raise ValueError("<img> requires an img-key attribute")
+            alt = (child.get("alt") or "").strip()
+            elements.append(
+                {
+                    "tag": "img",
+                    "img_key": img_key,
+                    "alt": {"tag": "plain_text", "content": alt},
+                }
+            )
+        elif tag == "date":
+            # 日期选择器:飞书 2.0 date_picker,点选即回调(与 score/comment 同样
+            # 走轮次动作名 + 预注册 handler)。子回调 value 带选中日期(飞书注入)。
+            action = (child.get("action") or "").strip()
+            if not action:
+                raise ValueError("<date> requires an action attribute")
+            handler = _resolve_handler(action, extra_handlers)
+            for r in range(_MAX_ROUNDS):
+                handlers[f"{action}_r{r}"] = handler
+            occurrence = action_occurrence.get(action, 0)
+            action_occurrence[action] = occurrence + 1
+            elements.append(_date_picker(child, round_, context, occurrence))
+        elif tag == "select":
+            # 下拉单选:飞书 2.0 select_static,option 子元素声明候选项。
+            action = (child.get("action") or "").strip()
+            if not action:
+                raise ValueError("<select> requires an action attribute")
+            handler = _resolve_handler(action, extra_handlers)
+            for r in range(_MAX_ROUNDS):
+                handlers[f"{action}_r{r}"] = handler
+            occurrence = action_occurrence.get(action, 0)
+            action_occurrence[action] = occurrence + 1
+            elements.append(_select_static(child, round_, context, occurrence))
         else:
-            raise ValueError(f"unknown element <{tag}> — vocabulary: info/score/comment/action-row/list under <card>")
+            raise ValueError(
+                f"unknown element <{tag}> — vocabulary: "
+                "info/score/comment/action-row/list/divider/img/date/select under <card>"
+            )
 
     card: dict[str, Any] = {
         "schema": "2.0",

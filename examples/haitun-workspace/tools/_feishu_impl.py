@@ -844,6 +844,7 @@ from _feishu.bitable import (  # noqa: E402,F401
     clear_bitable_table_impl,
     create_bitable_records_impl,
     create_bitable_table_impl,
+    delete_bitable_records_impl,
     list_bitable_fields_impl,
     search_bitable_records_impl,
     update_bitable_field_impl,

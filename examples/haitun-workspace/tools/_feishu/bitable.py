@@ -512,6 +512,48 @@ def _build_batch_delete_records_request(app_token: str, table_id: str, record_id
     return req
 
 
+async def delete_bitable_records_impl(
+    app_token: str,
+    table_id: str,
+    record_ids_json: str,
+    user_key: str = "",
+    identity: str = "",
+) -> dict[str, Any]:
+    """Delete specific records by id. record_ids_json is a JSON array of record_id strings; batches of 500.
+
+    Targeted counterpart to clear_bitable_table_impl (which wipes everything):
+    delete only the rows you name. Mirrors create_bitable_records_impl's shape.
+    """
+    if not app_token.strip():
+        return _core._error("No app_token provided (the segment in a feishu.cn/base/<app_token> URL).")
+    if not table_id.strip():
+        return _core._error(
+            "No table_id provided (get it from feishu_api GET /open-apis/bitable/v1/apps/:app_token/tables)."
+        )
+    try:
+        ids = json.loads(record_ids_json)
+    except ValueError as exc:
+        return _core._error(f"record_ids_json is not valid JSON: {exc}")
+    if not isinstance(ids, list) or not ids:
+        return _core._error('record_ids_json must be a non-empty JSON array of record_id strings, e.g. ["rec123"].')
+    ids = [str(i).strip() for i in ids if str(i).strip()]
+    if not ids:
+        return _core._error("record_ids_json contained no usable record ids.")
+    deleted = 0
+    for i in range(0, len(ids), 500):
+        batch = ids[i : i + 500]
+        res = await _core._invoke(
+            _build_batch_delete_records_request(app_token.strip(), table_id.strip(), batch),
+            user_key=user_key,
+            prefer="user",
+            identity=identity,
+        )
+        if not res["ok"]:
+            return {**res, "deleted": deleted}
+        deleted += len(batch)
+    return {"ok": True, "deleted": deleted}
+
+
 async def clear_bitable_table_impl(
     app_token: str,
     table_id: str,
