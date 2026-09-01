@@ -312,13 +312,8 @@
         ]
       },
       {
-        "tag": "note",
-        "elements": [
-          {
-            "tag": "plain_text",
-            "content": "海豚三号"
-          }
-        ]
+        "tag": "markdown",
+        "content": "<font color='#75726F'>海豚三号</font>"
       }
     ]
   }

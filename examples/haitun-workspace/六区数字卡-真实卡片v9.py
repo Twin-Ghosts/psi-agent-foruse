@@ -987,9 +987,9 @@ def build_boss_v6(people: list[dict], latest: str, date_cols: list[str],
                   "text": {"tag": "plain_text", "content": "📋 打开 TODO 总表"},
                   "type": "primary", "url": TODO_LIST_URL}]},
          ]},
-        # 落款（与真实卡片截图一致）
-        {"tag": "note",
-         "elements": [{"tag": "plain_text", "content": "海豚三号"}]},
+        # 落款（与真实卡片截图一致：灰色小字）
+        {"tag": "markdown",
+         "content": "<font color='#75726F'>海豚三号</font>"},
     ]
 
     return {
