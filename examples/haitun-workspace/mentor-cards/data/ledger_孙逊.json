@@ -1,5 +1,5 @@
 {
- "fetched_at": "2026-08-28T21:19:42",
+ "fetched_at": "2026-09-01T08:44:09",
  "source": {
   "name": "TODO 台账-孙逊",
   "url": "https://genuineknowledge.feishu.cn/base/C6sQbhhj1a5BRkslxjOcY2PPnYc?table=tblhfghF8Iz2Fb1j&view=vew19x5iJt",
@@ -387,7 +387,7 @@
    "due": "",
    "status": "进行中",
    "five": "",
-   "score": null,
+   "score": 4.0,
    "agent_score": null,
    "comment": "",
    "external": "",

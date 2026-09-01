@@ -56,6 +56,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
 import re
 import sys
 from collections import defaultdict
@@ -72,8 +73,10 @@ TODO_LIST = {
 }
 # 各 mentor 台账多维表格来源清单（ledger_sources.json）：每个 mentor 一个台账 base
 # （如 TODO 台账-孙逊）。台账是 ②目标数量 / ③完成情况 / ④逾期明细 / ⑥评价概况 的
-# 权威来源，由 fetch_ledgers.py 每周期现取 → data/ledger_<mentor>.json。
-# 未注册台账的组回落人工核对档案（data/manual_calibration.json），卡面标注口径。
+# 权威来源。ledger_sources.json 只是「从哪取数」的地址清单（配置，不是数据）；
+# 每次构建卡片时 load_ledger() 现场从飞书现取最新记录（不读预存快照），并顺手
+# 落盘 data/ledger_<mentor>.json 作审计副本 / 断网回退。未注册台账的组回落
+# 人工核对档案（data/manual_calibration.json），卡面标注口径。
 # 卡片底部「报表」行 = 该 mentor 自己的台账链接（ledger_sources.json 里的 url）。
 
 # 卡片 DSL 规范文档（黄子建）——卡片形态依据行已于 2026-08-28 按用户要求移除，保留定义备查
@@ -150,18 +153,34 @@ def load_roster() -> dict[str, str]:
         return {}
 
 
-def mentor_oids() -> dict[str, str]:
-    """mentor 收卡 open_id：优先通讯录 roster 按名解析；缺失回落到兜底表。"""
+def mentor_oids(names: list[str] | None = None) -> dict[str, str]:
+    """mentor 收卡 open_id：优先通讯录 roster 按名解析；缺失回落到兜底表。
+
+    names 为 None 时按兜底表名单解析（向后兼容：老调用方不传参行为不变）；
+    传入由 TODO LIST 数据派生的 mentor 名单时覆盖全部 mentor——新 mentor
+    只要在 roster.json（fetch_leave_attendance.py 产物）里就能拿到 open_id，
+    不再被兜底表写死；roster 与兜底表都没有的人才缺失（调用方跳过发卡并告警）。
+    """
     roster = load_roster()
-    if roster:
-        missing = [m for m in _MENTOR_OIDS_FALLBACK if m not in roster]
-        if missing:
-            print(f"[warn] 通讯录 roster 找不到 mentor：{missing}，其 open_id 回落兜底表",
-                  file=sys.stderr)
-        return {m: (roster.get(m) or o) for m, o in _MENTOR_OIDS_FALLBACK.items()}
-    print("[warn] 未找到 roster.json（fetch_leave_attendance.py 产物），"
-          "mentor open_id 回落到兜底表", file=sys.stderr)
-    return dict(_MENTOR_OIDS_FALLBACK)
+    fallback = _MENTOR_OIDS_FALLBACK
+    want = names if names is not None else list(fallback)
+    if not roster:
+        print("[warn] 未找到 roster.json（fetch_leave_attendance.py 产物），"
+              "mentor open_id 仅能回落到兜底表；新 mentor 将缺失 open_id",
+              file=sys.stderr)
+    out: dict[str, str] = {}
+    missing: list[str] = []
+    for m in want:
+        oid = (roster.get(m) or "") if roster else ""
+        if not oid:
+            oid = fallback.get(m, "")
+        if not oid:
+            missing.append(m)
+        out[m] = oid
+    if missing:
+        print(f"[warn] mentor 无 open_id（roster 与兜底表均无）：{missing}，将跳过发卡",
+              file=sys.stderr)
+    return out
 
 
 def runtime_windows(latest: str) -> tuple[tuple[str, str], str]:
@@ -210,21 +229,68 @@ def load_ledger_sources() -> dict:
         return {}
 
 
+# 台账实时拉取：每次构建进程首次访问某 mentor 时现场从飞书现取（不读预存快照）。
+# 进程内缓存避免同一进程重复请求；每次发卡脚本都是新进程 → 天然每次发卡现取。
+_ledger_cache: dict[str, dict | None] = {}
+_ledger_token: str | None = None
+
+
+def _ledger_token_or_none() -> str | None:
+    """懒拿 tenant token；环境变量缺失/取失败返回 None（调用方回退快照，不退出）。"""
+    global _ledger_token
+    if _ledger_token is not None:
+        return _ledger_token
+    if not (os.environ.get("PSI_FEISHU_APP_ID") and os.environ.get("PSI_FEISHU_APP_SECRET")):
+        print("[warn] 缺 PSI_FEISHU_APP_ID / PSI_FEISHU_APP_SECRET，台账无法现取，"
+              "回退落盘快照", file=sys.stderr)
+        return None
+    try:
+        import fetch_ledgers
+        _ledger_token = fetch_ledgers.get_tenant_token()
+    except (Exception, SystemExit) as e:
+        print(f"[warn] 拿飞书 tenant token 失败（{e}），台账回退落盘快照", file=sys.stderr)
+        _ledger_token = None
+    return _ledger_token
+
+
 def load_ledger(mentor: str) -> dict | None:
-    """读该 mentor 台账落盘（fetch_ledgers.py 产物 data/ledger_<mentor>.json）。
+    """该 mentor 台账 = **现场从飞书现取的最新记录**（ledger_sources.json 只是地址清单）。
+
+    顺序：① 已注册台账 → 实时拉取（fetch_ledgers.fetch_ledger_for，顺手落盘审计副本）；
+    ② 现取失败/未注册 → 回退落盘快照 data/ledger_<mentor>.json（断网兜底，打 warn）；
+    ③ 都没有 → None（卡片回落人工核对档案 data/manual_calibration.json）。
 
     结构：{fetched_at, source{name,url,app_token,tables}, latest_cycle, cycles, rows[]}
     rows 每行 = {cycle, owners, mentors, level, level_raw, parent, title, due,
                  status, five, score, agent_score, comment, external,
                  comparison, guid, record_id, table}
     """
-    p = DATA_DIR / f"ledger_{mentor}.json"
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except (ValueError, OSError):
-        return None
+    if mentor in _ledger_cache:
+        return _ledger_cache[mentor]
+
+    src = load_ledger_sources().get(mentor, {})
+    if src.get("app_token") and src.get("tables"):
+        token = _ledger_token_or_none()
+        if token:
+            try:
+                import fetch_ledgers
+                ledger = fetch_ledgers.fetch_ledger_for(mentor, src, token, save=True)
+                _ledger_cache[mentor] = ledger
+                return ledger
+            except Exception as e:
+                print(f"[warn] {mentor} 台账现取失败（{e.__class__.__name__}: {e}），"
+                      f"回退落盘快照", file=sys.stderr)
+        # 未注册或现取失败 → 快照兜底
+        p = DATA_DIR / f"ledger_{mentor}.json"
+        if p.exists():
+            try:
+                ledger = json.loads(p.read_text(encoding="utf-8"))
+                _ledger_cache[mentor] = ledger
+                return ledger
+            except (ValueError, OSError):
+                pass
+    _ledger_cache[mentor] = None
+    return None
 
 
 def ledger_latest_rows(ledger: dict | None) -> list[dict]:
@@ -483,6 +549,31 @@ _DELAY_RE = re.compile(
 # 正文里常见但**不是**延期标记的规划词
 _NOT_DELAY = re.compile(r"年底|明年|12\s*月|年度")
 
+# TODO LIST 表头里**不是**周期列的固定列名（其余列一律要求能解析出日期，
+# 否则会被当成周期列 → 请假/考勤窗口全空 → 全员误标 ⚠️ 未按时）
+_NON_CYCLE_COLS = {"任务负责人", "mentor", "test_read"}
+
+
+def _is_cycle_col(name: str) -> bool:
+    """周期列判定：非固定列名且列名能解析出日期（'7.24' / '8.10日'）。"""
+    if not name or name in _NON_CYCLE_COLS:
+        return False
+    return bool(_cycle_date(name))
+
+
+def _drop_unparsable_latest(cols: list[str]) -> list[str]:
+    """最新周期列解析不出日期时告警并回退到上一个真实周期列（防呆）。
+
+    正常情况下 load_people 已把 date_cols 过滤干净；此函数是第二道保险：
+    解析不出日期的列被过滤后本不该出现，一旦出现（如旧版 parsed.json
+    缓存混入坏列）就逐列回退，绝不默默把最新列当周期用导致全员红卡。
+    """
+    while cols and not _cycle_date(cols[-1]):
+        print(f"[warn] 周期列 {cols[-1]!r} 解析不出日期，"
+              "已回退到上一个真实周期列", file=sys.stderr)
+        cols.pop()
+    return cols
+
 
 def load_people(xlsx: str | None) -> tuple[list[str], list[dict]]:
     """载入人员数据。
@@ -499,10 +590,8 @@ def load_people(xlsx: str | None) -> tuple[list[str], list[dict]]:
         rows = list(ws.iter_rows(values_only=True))
         header = [str(c).strip() if c is not None else "" for c in rows[0]]
         col = {name: i for i, name in enumerate(header)}
-        date_cols = [
-            name for name in header
-            if name and name not in ("任务负责人", "mentor", "test_read")
-        ]
+        date_cols = _drop_unparsable_latest(
+            [name for name in header if _is_cycle_col(name)])
         people = []
         for r in rows[1:]:
             name = (str(r[col["任务负责人"]]).strip().replace("@", "")
@@ -526,7 +615,10 @@ def load_people(xlsx: str | None) -> tuple[list[str], list[dict]]:
     parsed = json.loads(
         (Path(__file__).resolve().parent.parent / "todo_list_parsed.json")
         .read_text(encoding="utf-8"))
-    return parsed["date_cols"], parsed["people"]
+    # 缓存文件同样过一遍防御：过滤非周期列 + 最新列解析不出时回退
+    date_cols = _drop_unparsable_latest(
+        [c for c in parsed["date_cols"] if _is_cycle_col(c)])
+    return date_cols, parsed["people"]
 
 
 def member_status(person: dict, latest: str, exempt: set[str],
@@ -555,6 +647,22 @@ def member_status(person: dict, latest: str, exempt: set[str],
             return "not_joined"
         return "unfilled"
     return "filled"
+
+
+_LEAVE_ONLY_RE = re.compile(
+    r"^\s*(?:请假|休假|放假|年假|事假|病假|调休|婚假|产假|陪产假|丧假|休息|居家)"
+    r"(?:\d+(?:\.\d+)?\s*(?:天|日|号|天假))?\s*[，。、,. ]*\s*$")
+
+
+def _real_fill(text: str) -> bool:
+    """趋势口径：格子里写了真实内容才算「已填报」。
+
+    整格只写「请假 / 事假2天 / 放假」这类请假标记 ≠ 填报 TODO
+    （如 2026-08-14 贺雅诗格内仅「请假」二字，旧逻辑误计为已填报，
+    导致该期填报率虚高）。附请假/休假/调休等字数说明的整格同样不计。
+    """
+    s = text.strip()
+    return bool(s) and not _LEAVE_ONLY_RE.match(s)
 
 
 def _leave_count_on(cycle_date: str, names: set[str]) -> int:
@@ -588,7 +696,7 @@ def trend_series(members: list[dict], date_cols: list[str], n: int,
     for c in cols:
         cd = _cycle_date(c)
         eligible = [p for p in members if joined_by(join_map, p["name"], cd)]
-        filled = sum(1 for p in eligible if (p["cols"].get(c) or "").strip())
+        filled = sum(1 for p in eligible if _real_fill(p["cols"].get(c) or ""))
         leave_n = _leave_count_on(cd, {p["name"] for p in eligible})
         series.append((c, filled, len(eligible), leave_n))
     return series
@@ -1082,7 +1190,7 @@ def main() -> int:
         by_mentor[p["mentor"] or "(未分组)"].append(p)
     # mentor 名单由数据派生（组名），open_id 由通讯录 roster 按名解析
     mentor_names = [m for m in by_mentor if m != "(未分组)"]
-    oids = mentor_oids()
+    oids = mentor_oids(mentor_names)
 
     # 防呆：本周期 TODO 数为 0 但数据源能解析出条目 → 必然漏数，告警
     cal = load_calibration()

@@ -15,10 +15,11 @@
 ─────────────────────────────────      ───────────────────────────      ────────
 《TODO LIST》电子表格（wiki）  ──导出──→ todo_list_source.xlsx ──解析──→ todo_list_parsed.json ─┐
      (7.24~最新周期列=填报正文)              （海豚 feishu_doc_export）                             │
-各 mentor 台账多维表格（bitable） ──拉取──→ data/ledger_<mentor>.json（fetch_ledgers.py）         │
-     (每 mentor 一个 base；来源清单          （tenant token 只读，归一化字段，                     ├─→ build_cards.py
-      ledger_sources.json；mentor 填写       含最新周期；②③④⑥ 台账口径）                        │    （唯一入口，
-      层级/状态/打分/评语)                                                                      │     按来源取数，
+各 mentor 台账多维表格（bitable） ──现取──→（build_cards.py 每次构建时现场拉取，         │
+     (每 mentor 一个 base；来源清单          tenant token 只读，归一化字段，                  ├─→ build_cards.py
+      ledger_sources.json；mentor 填写       含最新周期；②③④⑥ 台账口径；顺手                │    （唯一入口，
+      层级/状态/打分/评语)                   落盘 data/ledger_<mentor>.json 仅作               │     按来源取数，
+                                              审计副本 / 断网回退，不预存不依赖）              │     无死数据）
 飞书审批（请假 approval）     ──拉取──→ data/leave.json（近 90 天 APPROVED）                       │    （唯一入口，
 飞书考勤（打卡 attendance）  ──拉取──→ data/attendance.json（周期窗口逐日）                        │     按来源取数，
 飞书通讯录（contact）        ──拉取──→ roster.json（36人 name↔user_id↔open_id）                   │     无死数据）
@@ -27,8 +28,9 @@
 ```
 
 > **台账来源切换**：某组台账链接拿到后，填入 `ledger_sources.json` 该 mentor 条目
-> （name/url/app_token/tables），跑 `fetch_ledgers.py` 即自动切换该组 ②③④⑥ 为台账口径；
-> 未注册台账的组保持人工核对档案口径（卡面标注）。**不再由海豚自己解析 TODO 造台账**
+> （name/url/app_token/tables），**下次 `build_cards.py` 构建时自动现取**，即自动切换该组
+> ②③④⑥ 为台账口径；未注册台账的组保持人工核对档案口径（卡面标注）。台账不预存、
+> 不依赖落盘快照（落盘仅为审计/回退副本）。**不再由海豚自己解析 TODO 造台账**
 > （build_ledger.py 已废弃，2026-08-28 用户定：自己造的台账不可靠，不要建立和参考）。
 
 ## 二、数据项 → 来源 → 海豚取数方式
@@ -43,18 +45,18 @@
 | 6 | 入职时间（join_time） | **飞书通讯录**（contact/users/:user_id） | 同上（逐个查询；后台未填者返回平台默认值，判定逻辑不受影响） | `data/join.json` | 每次发卡前 |
 | 7 | 请假豁免窗口 / 考勤窗口 / 数据截至时间 | **由周期日推导**（窗口=周期日±7 天；截至时间=数据文件 fetched_at） | `runtime_windows()` / `data_as_of()` 运行时计算 | — | 自动 |
 | 8 | ① 人员概况 / ⑦ 趋势 | **TODO LIST 填报列 + 请假(4) + 入职(6)** | `member_status()` 判定链（filled→leave→not_joined→unfilled） | — | 发卡时 |
-| 9 | ② 目标数量（大/小/TODO） | **该 mentor 台账 ledger**（层级字段：大目标1/小目标1-4/todo1-3） | `fetch_ledgers.py` 按 `ledger_sources.json` 拉台账 → `data/ledger_<mentor>.json` → `goal_counts_from_ledger()`（最新周期行）；未注册台账回落**人工核对档案** | `data/ledger_<mentor>.json` + `data/manual_calibration.json` | 发卡前拉取 |
+| 9 | ② 目标数量（大/小/TODO） | **该 mentor 台账 ledger**（层级字段：大目标1/小目标1-4/todo1-3） | `build_cards.py` 构建时按 `ledger_sources.json` **现场现取**（`fetch_ledgers.fetch_ledger_for`，tenant token 只读）→ `goal_counts_from_ledger()`（最新周期行）；未注册台账回落**人工核对档案**；落盘 `data/ledger_<mentor>.json` 仅为审计/回退 | 在线台账（现取） + `data/manual_calibration.json` | 构建卡片时自动现取 |
 | 10 | ③ 完成情况（闭环/进行中/待开始/顺延/逾期） | **台账 ledger（状态字段：待开始/进行中/已交付/请假顺延）** | `closure_from_ledger()`（已交付=闭环；逾期=待开始且截止已过）；回落人工核对档案 | 同上 | 同上 |
-| 11 | ④ 逾期明细 | **台账 ledger（状态=待开始 且 截止日期已过 → 台账·超期未交付）→ 关键词自动扫描补充 → 人工核对档案** | `overdue_from_ledger()` + `auto_overdue_extra()`（扫描 delay/延期/延后等词，跳过豁免/未入职） | 同上 | 发卡时 |
+| 11 | ④ 逾期明细 | **台账 ledger（状态=待开始 且 截止日期已过 → 台账·超期未交付）→ 关键词自动扫描补充 → 人工核对档案** | `overdue_from_ledger()` + `auto_overdue_extra()`（扫描 delay/延期/延后等词，跳过豁免/未入职） | 同上 | 发卡时（现取） |
 | 12 | ⑤ 请假标注 | **飞书审批**（同 4） | `group_leaves()`（窗口重叠 + 合并同人相邻请假） | `data/leave.json` | 发卡时 |
-| 13 | ⑥ 评价概况 | **台账 ledger（mentor打分/mentor评语字段，mentor 填写）** | 台账该组最新周期行有打分时展示（平均分/分布/评语条数），否则「暂无评价数据」 | `data/ledger_<mentor>.json` | mentor 填写后 |
+| 13 | ⑥ 评价概况 | **台账 ledger（mentor打分/mentor评语字段，mentor 填写）** | 台账该组最新周期行有打分时展示（平均分/分布/评语条数），否则「暂无评价数据」 | 在线台账（现取） | mentor 填写后 |
 | 14 | 数据源链接（TODO LIST / 各 mentor 台账） | **固定文档地址**（在线来源本身） | 代码 `TODO_LIST` 常量 + `ledger_sources.json`（这是「来源地址」不是数据） | — | 不变 |
 
 ## 三、口径与切换规则（诚实标注）
 
 | 栏目 | 当前口径 | 台账接管条件 | 卡面标注 |
 |------|----------|--------------|----------|
-| ② 目标数量 | 已注册台账的组=台账（最新周期行层级计数）；未注册组=人工核对档案 `data/manual_calibration.json`（2026-08-28 17:35 核对） | 台账在 `ledger_sources.json` 注册 + `fetch_ledgers.py` 拉到数据 | 「台账·截至MM-DD」/「人工核对 YYYY-MM-DD」 |
+| ② 目标数量 | 已注册台账的组=台账（最新周期行层级计数）；未注册组=人工核对档案 `data/manual_calibration.json`（2026-08-28 17:35 核对） | 台账在 `ledger_sources.json` 注册 + `build_cards.py` 构建时**现场现取成功** | 「台账·截至MM-DD」/「人工核对 YYYY-MM-DD」 |
 | ③ 完成情况 | 同上（台账状态字段 / 人工核对档案） | 同上 | 「台账·截至MM-DD」 |
 | ④ 逾期明细 | 台账（状态=待开始 且 截止已过 → 台账·超期未交付）+ 自动扫描 | 同上 → 台账状态派生 | 条目标记「台账·超期未交付」/「自动标记」 |
 | ⑥ 评价概况 | 台账（mentor打分/评语，有则展示） | 台账有打分行 | 「台账·截至MM-DD」 |

@@ -15,15 +15,15 @@
 |---|---|
 | `fetch_leave_attendance.py` | **真实数据通道**：拉飞书通讯录（roster，权限受限自动保留旧值）+ 请假审批（近 90 天）+ 全员考勤（周期窗口，由 `--cycle` 推导）+ 全员入职时间 → `roster.json` / `data/leave.json` / `data/attendance.json` / `data/join.json`（依赖 `PSI_FEISHU_APP_ID/SECRET`，仅标准库） |
 | `ledger_sources.json` | **各 mentor 台账来源清单**（每 mentor 一个台账 base 的地址：name/url/app_token/tables）。这是「从哪取数」的地址，不是数据；拿到某组台账链接填进去即自动切换台账口径 |
-| `fetch_ledgers.py` | **台账拉取**：按 `ledger_sources.json` 逐个 mentor 台账 base 现取记录（tenant token，只读），归一化字段 → `data/ledger_<mentor>.json`（最新周期 + rows） |
-| `build_cards.py` | 唯一入口：读 TODO 数据 + 请假/考勤/入职 + **各 mentor 台账（有则台账口径，无则人工核对档案）** → 统计 7 栏目 → 生成卡片 JSON。周期/窗口/截至时间/mentor open_id 全部运行时推导，无死数据 |
+| `fetch_ledgers.py` | **台账拉取逻辑**（tenant token，只读，归一化字段）。可独立 CLI 跑，但**不再是发卡前置步骤**：`build_cards.py` 每次构建时自动调用同一逻辑现取（见下） |
+| `build_cards.py` | 唯一入口：读 TODO 数据 + 请假/考勤/入职 + **各 mentor 台账（构建时现场从飞书现取；有则台账口径，无则人工核对档案）** → 统计 7 栏目 → 生成卡片 JSON。周期/窗口/截至时间/mentor open_id 全部运行时推导，无死数据 |
 | `build_ledger.py` | ~~TODO LIST 本周期正文 → 台账行~~ **已废弃**（用户 2026-08-28 定：不要自己造台账，改读 mentor 真实台账） |
 | `roster.json` | 全员通讯录映射（name ↔ user_id ↔ open_id），由海豚 `feishu_department_members` 刷新（fetch 脚本权限受限时不覆盖） |
 | `data/manual_calibration.json` | **人工核对档案**（②③④ 兜底口径，`calibrated_at` 记录核对时间）；某组台账注册并拉到数据后自动让位 |
 | `data/leave.json` | 请假实例（申请人/类型/起止/天数/事由/状态），由 fetch 脚本生成 |
 | `data/attendance.json` | 全员逐日打卡结果（周期窗口），由 fetch 脚本生成 |
 | `data/join.json` | 全员入职时间（name → join_date），由 fetch 脚本生成；**未按时判定的「入职后」依据** |
-| `data/ledger_<mentor>.json` | 该 mentor 台账记录落盘（fetch_ledgers.py 产物，含 latest_cycle），卡片 ②③④⑥ 的台账口径来源 |
+| `data/ledger_<mentor>.json` | 台账记录**审计副本 / 断网回退**（build_cards 每次构建现场现取后顺手落盘，含 latest_cycle）。卡片 ②③④⑥ 消费的是**现场拉取结果**，不是这份文件 |
 | `mentor_cards.json` | 生成产物：`{mentor名: {"oid": open_id, "card": 卡片JSON}, "__boss__": {"card": 卡片JSON}}` |
 | `../todo_list_parsed.json` | 解析后的 TODO 数据源（由 `--xlsx` 或 `analyze_todo_list.py` 维护） |
 
@@ -42,16 +42,15 @@ python3 mentor_cards/fetch_leave_attendance.py --cycle 2026-08-28
 （通讯录权限受限时自动保留旧值并告警，改用 `feishu_department_members` 刷新）。
 无凭据或缺文件时 `build_cards.py` 自动降级到兜底口径，不报错。
 
-### 2. 拉各 mentor 台账（每次发卡前必做；台账已注册的组）
+### 2. 各 mentor 台账（**build_cards.py 自动现取，无需单独跑**）
 
-```bash
-python3 mentor_cards/fetch_ledgers.py
-```
-
-按 `ledger_sources.json` 逐个台账 base 现取记录（tenant token，只读）→
-`data/ledger_<mentor>.json`（含最新周期）。**某组台账链接拿到后，填入
-`ledger_sources.json` 对应 mentor 条目即可自动切换台账口径**（②③④⑥）。
+台账不是预存数据：`build_cards.py` 每次构建卡片时，对 `ledger_sources.json` 中
+已注册的 mentor 台账 base **现场从飞书现取最新记录**（tenant token，只读），
+归一化后直接用于 ②③④⑥；顺手落盘 `data/ledger_<mentor>.json` 仅作审计副本 /
+断网回退（现取失败才读它，且打 warn）。**某组台账链接拿到后，填入
+`ledger_sources.json` 对应 mentor 条目，下次构建即自动切换台账口径**（②③④⑥）。
 未注册台账的组自动回落人工核对档案（`data/manual_calibration.json`）。
+（`fetch_ledgers.py` 仍可独立跑一次用于手动刷新副本，但不再是发卡前置步骤。）
 
 ### 3. 刷新 TODO LIST（数据源更新后必做）
 

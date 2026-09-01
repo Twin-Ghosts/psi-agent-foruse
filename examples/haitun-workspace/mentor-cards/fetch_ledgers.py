@@ -174,6 +174,44 @@ def fetch_table(token: str, app_token: str, table_id: str, table_name: str) -> l
     return rows
 
 
+def fetch_ledger_for(mentor: str, src: dict, token: str, save: bool = True) -> dict:
+    """现场拉取一个 mentor 的台账（归一化）→ ledger dict。
+
+    src = ledger_sources.json 里的 {name,url,app_token,tables}。
+    save=True 时顺手落盘 data/ledger_<mentor>.json 作为审计副本 / 断网回退，
+    但调用方（build_cards.load_ledger）消费的是本函数返回的实时数据。
+    """
+    app_token = src["app_token"]
+    all_rows: list[dict] = []
+    for table_id in src["tables"]:
+        try:
+            tinfo = _req("GET",
+                         f"/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}",
+                         token=token)
+            tname = ((tinfo.get("data") or {}).get("table", {}) or {}).get("name", table_id)
+        except Exception:
+            tname = table_id
+        rows = fetch_table(token, app_token, table_id, tname)
+        print(f"[ok]   {mentor} · 表 {tname}: {len(rows)} 行")
+        all_rows.extend(rows)
+    cycles = sorted({r["cycle"] for r in all_rows if r["cycle"]})
+    latest_cycle = cycles[-1] if cycles else ""
+    out = {
+        "fetched_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "source": {"name": src.get("name", ""), "url": src.get("url", ""),
+                   "app_token": app_token, "tables": src["tables"]},
+        "latest_cycle": latest_cycle,
+        "cycles": cycles,
+        "rows": all_rows,
+    }
+    if save:
+        dest = DATA_DIR / f"ledger_{mentor}.json"
+        dest.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+        print(f"[ok] {mentor} 台账 {len(all_rows)} 行，最新周期 {latest_cycle or '（无周期日期）'} "
+              f"→ {dest}")
+    return out
+
+
 def main() -> int:
     src_path = HERE / "ledger_sources.json"
     if not src_path.exists():
@@ -190,33 +228,7 @@ def main() -> int:
         return 0
 
     for mentor, src in sorted(registered.items()):
-        app_token = src["app_token"]
-        all_rows: list[dict] = []
-        for table_id in src["tables"]:
-            try:
-                tinfo = _req("GET",
-                             f"/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}",
-                             token=token)
-                tname = ((tinfo.get("data") or {}).get("table", {}) or {}).get("name", table_id)
-            except Exception:
-                tname = table_id
-            rows = fetch_table(token, app_token, table_id, tname)
-            print(f"[ok]   {mentor} · 表 {tname}: {len(rows)} 行")
-            all_rows.extend(rows)
-        cycles = sorted({r["cycle"] for r in all_rows if r["cycle"]})
-        latest_cycle = cycles[-1] if cycles else ""
-        out = {
-            "fetched_at": datetime.datetime.now().isoformat(timespec="seconds"),
-            "source": {"name": src.get("name", ""), "url": src.get("url", ""),
-                       "app_token": app_token, "tables": src["tables"]},
-            "latest_cycle": latest_cycle,
-            "cycles": cycles,
-            "rows": all_rows,
-        }
-        dest = DATA_DIR / f"ledger_{mentor}.json"
-        dest.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
-        print(f"[ok] {mentor} 台账 {len(all_rows)} 行，最新周期 {latest_cycle or '（无周期日期）'} "
-              f"→ {dest}")
+        fetch_ledger_for(mentor, src, token, save=True)
     return 0
 
 
