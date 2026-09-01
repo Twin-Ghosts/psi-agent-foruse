@@ -2,103 +2,372 @@
  "孙逊": {
   "oid": "ou_0c56129dd1574d659af087c88cfe626e",
   "card": {
+   "schema": "2.0",
    "config": {
-    "wide_screen_mode": true
+    "width_mode": "regular",
+    "enable_forward": true
    },
    "header": {
-    "template": "green",
     "title": {
      "tag": "plain_text",
      "content": "📋 周期报表 · 8.28 第16周期 · 孙逊团队"
-    }
+    },
+    "template": "green"
    },
-   "elements": [
-    {
-     "tag": "div",
-     "text": {
-      "tag": "lark_md",
-      "content": "**孙逊** mentor · 组内 7 人 · 数据截至 08-29 12:28\n成员：马晨柯✅ · 李子祥✅ · 黄子建✅ · 贺雅诗✅ · 王俊懿✅ · 刘心雨✅ · 马菁宜✅"
+   "body": {
+    "elements": [
+     {
+      "tag": "markdown",
+      "content": "<font color='#8F959E'>🗂 台账·截至08-17　🕐 数据截至 08-29 12:28　👥 组内 7 人</font>"
+     },
+     {
+      "tag": "hr"
+     },
+     {
+      "tag": "markdown",
+      "content": "<font color='#1F2329'>**👥 ① 人员概况**</font>"
+     },
+     {
+      "tag": "column_set",
+      "flex_mode": "none",
+      "horizontal_spacing": "4px",
+      "background_style": "grey",
+      "columns": [
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "vertical_align": "top",
+        "elements": [
+         {
+          "tag": "markdown",
+          "content": "<font size='26px' color='#34C724'>**7/7**</font>",
+          "text_align": "center"
+         },
+         {
+          "tag": "markdown",
+          "content": "<font color='grey'>填报</font>",
+          "text_align": "center"
+         }
+        ]
+       },
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "vertical_align": "top",
+        "elements": [
+         {
+          "tag": "markdown",
+          "content": "<font size='26px' color='#3370FF'>**7**</font>",
+          "text_align": "center"
+         },
+         {
+          "tag": "markdown",
+          "content": "<font color='grey'>总人数</font>",
+          "text_align": "center"
+         }
+        ]
+       },
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "vertical_align": "top",
+        "elements": [
+         {
+          "tag": "markdown",
+          "content": "<font size='26px' color='#34C724'>**0**</font>",
+          "text_align": "center"
+         },
+         {
+          "tag": "markdown",
+          "content": "<font color='grey'>未按时</font>",
+          "text_align": "center"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "tag": "markdown",
+      "content": "<font color='#F53F3F'>⏰ 考勤异常（8.22–8.28）：</font>刘心雨（缺卡1）、李子祥（迟到1）、王俊懿（缺卡1 · 迟到1）　<font color='grey'>[异常明细 →](https://genuineknowledge.feishu.cn/base/WlQxbZ965aSJmIseDLCc4ghMnjg?table=tblhj8UQFZHkIumj)</font>"
+     },
+     {
+      "tag": "markdown",
+      "content": "<font color='#1F2329'>**🎯 ② 目标数量**</font><font color='#B0B6BF'>（台账·截至08-17）</font>"
+     },
+     {
+      "tag": "column_set",
+      "flex_mode": "none",
+      "horizontal_spacing": "4px",
+      "background_style": "grey",
+      "columns": [
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "vertical_align": "top",
+        "elements": [
+         {
+          "tag": "markdown",
+          "content": "<font size='26px' color='#3370FF'>**1**</font>",
+          "text_align": "center"
+         },
+         {
+          "tag": "markdown",
+          "content": "<font color='grey'>大目标</font>",
+          "text_align": "center"
+         }
+        ]
+       },
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "vertical_align": "top",
+        "elements": [
+         {
+          "tag": "markdown",
+          "content": "<font size='26px' color='#3370FF'>**2**</font>",
+          "text_align": "center"
+         },
+         {
+          "tag": "markdown",
+          "content": "<font color='grey'>小目标</font>",
+          "text_align": "center"
+         }
+        ]
+       },
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "vertical_align": "top",
+        "elements": [
+         {
+          "tag": "markdown",
+          "content": "<font size='26px' color='#3370FF'>**2**</font>",
+          "text_align": "center"
+         },
+         {
+          "tag": "markdown",
+          "content": "<font color='grey'>周期TODO</font>",
+          "text_align": "center"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "tag": "markdown",
+      "content": "<font color='#1F2329'>**🏁 ③ 完成情况**</font><font color='#B0B6BF'>（台账·截至08-17）</font>"
+     },
+     {
+      "tag": "column_set",
+      "flex_mode": "none",
+      "horizontal_spacing": "4px",
+      "background_style": "grey",
+      "columns": [
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "vertical_align": "top",
+        "elements": [
+         {
+          "tag": "markdown",
+          "content": "<font size='26px' color='#34C724'>**2**</font>",
+          "text_align": "center"
+         },
+         {
+          "tag": "markdown",
+          "content": "<font color='grey'>已闭环</font>",
+          "text_align": "center"
+         }
+        ]
+       },
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "vertical_align": "top",
+        "elements": [
+         {
+          "tag": "markdown",
+          "content": "<font size='26px' color='#FA8C16'>**3**</font>",
+          "text_align": "center"
+         },
+         {
+          "tag": "markdown",
+          "content": "<font color='grey'>进行中</font>",
+          "text_align": "center"
+         }
+        ]
+       },
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "vertical_align": "top",
+        "elements": [
+         {
+          "tag": "markdown",
+          "content": "<font size='26px' color='#34C724'>**100%**</font>",
+          "text_align": "center"
+         },
+         {
+          "tag": "markdown",
+          "content": "<font color='grey'>填报率</font>",
+          "text_align": "center"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "tag": "markdown",
+      "content": "✅ 已闭环任务（2）　<font color='grey'>[明细 →](https://genuineknowledge.feishu.cn/base/WlQxbZ965aSJmIseDLCc4ghMnjg?table=tblrvbJsl82K5gzs)</font>"
+     },
+     {
+      "tag": "markdown",
+      "content": "🔄 进行中任务（3）　<font color='grey'>[明细 →](https://genuineknowledge.feishu.cn/base/WlQxbZ965aSJmIseDLCc4ghMnjg?table=tblrbvCKJCFwe4Yz)</font>"
+     },
+     {
+      "tag": "markdown",
+      "content": "<font color='#1F2329'>**⏰ ④ 逾期**</font>"
+     },
+     {
+      "tag": "markdown",
+      "content": "✅ **本周期无逾期**　<font color='grey'>[明细 →](https://genuineknowledge.feishu.cn/base/WlQxbZ965aSJmIseDLCc4ghMnjg?table=tbloI4VeKcIDwouO&view=vewGHATBIn)</font>"
+     },
+     {
+      "tag": "markdown",
+      "content": "<font color='#1F2329'>**🏖 ⑤ 请假**</font><font color='#B0B6BF'>（飞书审批·近周期）</font>"
+     },
+     {
+      "tag": "markdown",
+      "content": "🏖 **有请假 3 人**　<font color='grey'>[名单 →](https://genuineknowledge.feishu.cn/base/WlQxbZ965aSJmIseDLCc4ghMnjg?table=tblp8PbiF0taJuVd&view=vewhTkvBV4)</font>"
+     },
+     {
+      "tag": "markdown",
+      "content": "<font color='#1F2329'>**⭐ ⑥ 评价概况**</font><font color='#B0B6BF'>（台账·截至08-17）</font>"
+     },
+     {
+      "tag": "column_set",
+      "flex_mode": "none",
+      "horizontal_spacing": "4px",
+      "background_style": "grey",
+      "columns": [
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "vertical_align": "top",
+        "elements": [
+         {
+          "tag": "markdown",
+          "content": "<font size='26px' color='#FA8C16'>**4.0★**</font>",
+          "text_align": "center"
+         },
+         {
+          "tag": "markdown",
+          "content": "<font color='grey'>平均</font>",
+          "text_align": "center"
+         }
+        ]
+       },
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "vertical_align": "top",
+        "elements": [
+         {
+          "tag": "markdown",
+          "content": "<font size='26px' color='#3370FF'>**5**</font>",
+          "text_align": "center"
+         },
+         {
+          "tag": "markdown",
+          "content": "<font color='grey'>已评</font>",
+          "text_align": "center"
+         }
+        ]
+       },
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "vertical_align": "top",
+        "elements": [
+         {
+          "tag": "markdown",
+          "content": "<font size='26px' color='#3370FF'>**3**</font>",
+          "text_align": "center"
+         },
+         {
+          "tag": "markdown",
+          "content": "<font color='grey'>评语</font>",
+          "text_align": "center"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "tag": "markdown",
+      "content": "<font color='grey'>5★×1 ｜ 4★×3 ｜ 3★×1</font>"
+     },
+     {
+      "tag": "markdown",
+      "content": "<font color='#1F2329'>**📈 填报趋势（近 8 期 · 非请假口径）**</font>"
+     },
+     {
+      "tag": "markdown",
+      "content": "📈 **持续满员**　<font color='grey'>[折线图（应填/填报）→](https://genuineknowledge.feishu.cn/docx/V6XFdHLAsoobFUxptb4cb2IlnBf)</font>"
+     },
+     {
+      "tag": "column_set",
+      "flex_mode": "none",
+      "horizontal_spacing": "8px",
+      "columns": [
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "elements": [
+         {
+          "tag": "button",
+          "text": {
+           "tag": "plain_text",
+           "content": "📊 打开台账"
+          },
+          "type": "primary",
+          "url": "https://genuineknowledge.feishu.cn/base/C6sQbhhj1a5BRkslxjOcY2PPnYc?table=tblhfghF8Iz2Fb1j&view=vew19x5iJt"
+         }
+        ]
+       },
+       {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "elements": [
+         {
+          "tag": "button",
+          "text": {
+           "tag": "plain_text",
+           "content": "📋 打开 TODO 总表"
+          },
+          "type": "primary",
+          "url": "https://genuineknowledge.feishu.cn/wiki/H6icwLWn1iwpXAk73QMcA6MgnWc"
+         }
+        ]
+       }
+      ]
      }
-    },
-    {
-     "tag": "hr"
-    },
-    {
-     "tag": "div",
-     "text": {
-      "tag": "lark_md",
-      "content": "**① 人员概况**\n填报 **7/7** 人 · 请假 3 · 未按时 0\n<font color='red'>⏰ 考勤异常（8.22–8.28）：刘心雨（缺卡1）、李子祥（迟到1）、王俊懿（缺卡1 · 迟到1）</font>"
-     }
-    },
-    {
-     "tag": "div",
-     "text": {
-      "tag": "lark_md",
-      "content": "**② 目标数量**（台账·截至08-17口径）\n大目标 1 ｜ 小目标 2 ｜ 本周期 TODO 2"
-     }
-    },
-    {
-     "tag": "div",
-     "text": {
-      "tag": "lark_md",
-      "content": "**③ 完成情况**（台账·截至08-17）\n✅ 已闭环 2 · 🔄 进行中 3 · ⚠️ 逾期 0 · 填报率 100%"
-     }
-    },
-    {
-     "tag": "div",
-     "text": {
-      "tag": "lark_md",
-      "content": "**④ 逾期明细**\n✅ 本周期无逾期"
-     }
-    },
-    {
-     "tag": "div",
-     "text": {
-      "tag": "lark_md",
-      "content": "**⑤ 请假标注**（飞书审批 · 近周期 3 人）\n🏖 马晨柯 · 事假 08-17 ~ 08-27（9天） ✅已批准\n🏖 王俊懿 · 事假 08-24 ~ 08-26（2天） ✅已批准\n🏖 刘心雨 · 病假 08-27 ~ 08-28（1.5天） ✅已批准"
-     }
-    },
-    {
-     "tag": "div",
-     "text": {
-      "tag": "lark_md",
-      "content": "**⑥ 评价概况**（台账·截至08-17）\n平均 4.0 ★ · 已评 5 条\n5★×1 ｜ 4★×3 ｜ 3★×1\n评语 3 条"
-     }
-    },
-    {
-     "tag": "div",
-     "text": {
-      "tag": "lark_md",
-      "content": "**⑦ 趋势**（近 8 期填报率 · 括号 N 放假 = 当日请假在假，请假豁免填报）\n4/4 → 4/5（2放假） → 4/5（2放假） → 4/5（2放假） → 6/7（1放假） → 5/7（2放假） → 6/7（2放假） → 7/7（1放假） 🟢↑"
-     }
-    },
-    {
-     "tag": "hr"
-    },
-    {
-     "tag": "div",
-     "text": {
-      "tag": "lark_md",
-      "content": "📎 数据源：[打开 TODO LIST 电子表格](https://genuineknowledge.feishu.cn/wiki/H6icwLWn1iwpXAk73QMcA6MgnWc)"
-     }
-    },
-    {
-     "tag": "div",
-     "text": {
-      "tag": "lark_md",
-      "content": "📊 报表：[打开 TODO 台账-孙逊](https://genuineknowledge.feishu.cn/base/C6sQbhhj1a5BRkslxjOcY2PPnYc?table=tblhfghF8Iz2Fb1j&view=vew19x5iJt)"
-     }
-    },
-    {
-     "tag": "note",
-     "elements": [
-      {
-       "tag": "plain_text",
-       "content": "数据源：TODO LIST（TODO 截至 08-29 14:46）· 飞书审批（请假）· 飞书考勤（打卡 8.22–8.28，截至 08-29 12:28）\nhttps://genuineknowledge.feishu.cn/wiki/H6icwLWn1iwpXAk73QMcA6MgnWc · obj_token Q7r9s9BiBhFWmot2diUcUY1UnCd"
-      }
-     ]
-    }
-   ]
+    ]
+   }
   }
  }
 }
