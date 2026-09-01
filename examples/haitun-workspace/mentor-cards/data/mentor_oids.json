@@ -1,0 +1,11 @@
+{
+  "_comment": "mentor 收卡 open_id 兜底表（海豚用飞书通讯录 / roster.json 解析后维护；roster.json 优先，本表仅兜底）",
+  "周熠": "ou_45f5b073a1294e286eca6ebbea9a52ee",
+  "孙逊": "ou_0c56129dd1574d659af087c88cfe626e",
+  "张浩": "ou_d127ef7e3fdc75813bf0a58440f3eaef",
+  "郑淳": "ou_380190923954d6c5eea8f7edd33d4547",
+  "王金旺": "ou_47c42145d28f93802738229909a28a90",
+  "程秀秀": "ou_60e9c36f7637168048ee1406fd05e224",
+  "李秉千": "ou_478e6d08811c57c557c080f06f2b3b9f",
+  "潘逸轩": "ou_728f1a96cc59ff7f2decffc073393a3a"
+}

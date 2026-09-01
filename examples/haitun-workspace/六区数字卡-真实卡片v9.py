@@ -31,16 +31,35 @@ WS = Path(__file__).resolve().parent
 sys.path.insert(0, str(WS / "mentor_cards"))
 import build_cards as B  # noqa: E402
 
-FEISHU_DOC_BASE = "https://genuineknowledge.feishu.cn"  # 租户域名（docx 创建接口不返回 url，按此拼接）
-TODO_LIST_URL = f"{FEISHU_DOC_BASE}/wiki/H6icwLWn1iwpXAk73QMcA6MgnWc"
+FEISHU_DOC_BASE = ""  # 租户域名：由海豚运行时解析（data/sources.json["doc_base"]），代码不硬编码
+TODO_LIST_URL = ""  # TODO 总表链接：由海豚运行时解析（data/sources.json["todo_list"]）
 DETAIL_BASES = WS / "mentor_cards" / "detail_bases.json"
 TREND_DATA = WS / "mentor_cards" / "data" / "trend_data.json"
 
-# 协作者（自建明细表/趋势文档加协作者用；幂等，失败忽略）
-COLLABORATORS = [
-    {"open_id": "ou_4252f65b5d15191a793262f318c1f598", "name": "马晨柯"},
-    {"open_id": "ou_0c56129dd1574d659af087c88cfe626e", "name": "孙逊"},
-]
+# 协作者（自建明细表/趋势文档加协作者用；幂等，失败忽略）——海豚解析后写入 sources.json
+COLLABORATORS = []
+
+
+def _doc_base() -> str:
+    """租户域名：读海豚解析的 sources.json（缺失降级为空 → 明细链接存空，不产坏链接）。"""
+    if not FEISHU_DOC_BASE:
+        globals()["FEISHU_DOC_BASE"] = B.load_todo_source().get("doc_base", "")
+    return FEISHU_DOC_BASE
+
+
+def _todo_list_url() -> str:
+    """TODO 总表链接：读海豚解析的 sources.json（缺失降级为空 → 按钮不带链接）。"""
+    if not TODO_LIST_URL:
+        globals()["TODO_LIST_URL"] = B.load_todo_source().get("url", "")
+    return TODO_LIST_URL
+
+
+def _collaborators() -> list[dict]:
+    """加协作者名单：读海豚解析的 sources.json["collaborators"]（缺失降级为空）。"""
+    if not COLLABORATORS:
+        src = B._load_data("sources.json") or {}
+        globals()["COLLABORATORS"] = src.get("collaborators", []) if isinstance(src, dict) else []
+    return COLLABORATORS
 
 # 趋势口径库：全部 ≤8 字；trend_desc 按真实趋势实时选择
 TREND_LEXICON = {
@@ -167,7 +186,7 @@ def _ensure_base(token: str, name: str) -> str:
 
 def _add_collaborators(token: str, app_token: str) -> None:
     """给自建 base 加协作者（edit 权限，幂等；失败忽略不阻断）。"""
-    for c in COLLABORATORS:
+    for c in _collaborators():
         try:
             _req("POST",
                  f"/open-apis/drive/v1/permissions/{app_token}/members?type=bitable",
@@ -258,13 +277,13 @@ def ensure_mentor_task_tables(mentor: str, closed_rows: list[list[str]],
     tasks = reg.setdefault("tasks", {})
     if closed_rows:
         tid = _ensure_table(token, app, "已闭环任务", _TASK_FIELDS)
-        url = f"{FEISHU_DOC_BASE}/base/{app}?table={tid}"
+        url = f"{_doc_base()}/base/{app}?table={tid}"
         tasks["closed"] = {"table_id": tid, "url": url}
         _replace_records(token, app, tid,
                          [_task_row(*r) for r in closed_rows])
     if doing_rows:
         tid = _ensure_table(token, app, "进行中任务", _TASK_FIELDS)
-        url = f"{FEISHU_DOC_BASE}/base/{app}?table={tid}"
+        url = f"{_doc_base()}/base/{app}?table={tid}"
         tasks["doing"] = {"table_id": tid, "url": url}
         _replace_records(token, app, tid,
                          [_task_row(*r) for r in doing_rows])
@@ -296,7 +315,7 @@ def ensure_boss_tables(team_rows: list[list[str]], all_closed: list[list[str]],
         print(f"[明细表] boss 新建 base {app}")
     # 团队维度
     tid = _ensure_table(token, app, "团队维度", _TEAM_FIELDS)
-    reg["team"] = {"table_id": tid, "url": f"{FEISHU_DOC_BASE}/base/{app}?table={tid}"}
+    reg["team"] = {"table_id": tid, "url": f"{_doc_base()}/base/{app}?table={tid}"}
     _replace_records(token, app, tid,
                      [{"团队": r[0], "人数": int(r[1] or 0), "填报": int(r[2] or 0),
                        "未填": int(r[3] or 0), "请假": int(r[4] or 0), "逾期": int(r[5] or 0),
@@ -305,31 +324,31 @@ def ensure_boss_tables(team_rows: list[list[str]], all_closed: list[list[str]],
     tasks = reg.setdefault("tasks", {})
     if all_closed:
         tid = _ensure_table(token, app, "已闭环任务", _BOSS_TASK_FIELDS)
-        tasks["closed"] = {"table_id": tid, "url": f"{FEISHU_DOC_BASE}/base/{app}?table={tid}"}
+        tasks["closed"] = {"table_id": tid, "url": f"{_doc_base()}/base/{app}?table={tid}"}
         _replace_records(token, app, tid,
                          [{"团队": r[0], "负责人": r[1], "任务": r[2], "截止": r[3]}
                           for r in all_closed])
     if all_doing:
         tid = _ensure_table(token, app, "进行中任务", _BOSS_TASK_FIELDS)
-        tasks["doing"] = {"table_id": tid, "url": f"{FEISHU_DOC_BASE}/base/{app}?table={tid}"}
+        tasks["doing"] = {"table_id": tid, "url": f"{_doc_base()}/base/{app}?table={tid}"}
         _replace_records(token, app, tid,
                          [{"团队": r[0], "负责人": r[1], "任务": r[2], "截止": r[3]}
                           for r in all_doing])
     # v7：台账总览
     tid = _ensure_table(token, app, "台账总览", _BOSS_LEDGER_FIELDS)
-    reg["ledger"] = {"table_id": tid, "url": f"{FEISHU_DOC_BASE}/base/{app}?table={tid}"}
+    reg["ledger"] = {"table_id": tid, "url": f"{_doc_base()}/base/{app}?table={tid}"}
     _replace_records(token, app, tid, ledger_rows)
     # v7：逾期明细
     if all_overdue:
         tid = _ensure_table(token, app, "逾期明细", _BOSS_OVERDUE_FIELDS)
-        reg["overdue"] = {"table_id": tid, "url": f"{FEISHU_DOC_BASE}/base/{app}?table={tid}"}
+        reg["overdue"] = {"table_id": tid, "url": f"{_doc_base()}/base/{app}?table={tid}"}
         _replace_records(token, app, tid,
                          [{"团队": g, "负责人": o, "任务": t, "标记": m}
                           for g, o, t, m in all_overdue])
     # v7：请假标注
     if g_leaves:
         tid = _ensure_table(token, app, "请假标注", _BOSS_LEAVE_FIELDS)
-        reg["leave"] = {"table_id": tid, "url": f"{FEISHU_DOC_BASE}/base/{app}?table={tid}"}
+        reg["leave"] = {"table_id": tid, "url": f"{_doc_base()}/base/{app}?table={tid}"}
         _replace_records(token, app, tid,
                          [{"姓名": e["name"], "团队": name_to_mentor.get(e["name"], ""),
                            "类型": e["types"],
@@ -342,7 +361,7 @@ def ensure_boss_tables(team_rows: list[list[str]], all_closed: list[list[str]],
     # v7：考勤异常
     if anomalies:
         tid = _ensure_table(token, app, "考勤异常", _BOSS_ATT_FIELDS)
-        reg["att"] = {"table_id": tid, "url": f"{FEISHU_DOC_BASE}/base/{app}?table={tid}"}
+        reg["att"] = {"table_id": tid, "url": f"{_doc_base()}/base/{app}?table={tid}"}
         _replace_records(token, app, tid,
                          [{"姓名": n, "异常": "、".join(it), "统计窗口": att_window}
                           for n, it in sorted(anomalies.items())])
@@ -408,7 +427,7 @@ def trend_url_of(reg_key: str) -> str:
     td = reg.get("trend") or {}
     url = td.get("url") or ""
     if not url and td.get("document_id"):
-        url = f"{FEISHU_DOC_BASE}/docx/{td['document_id']}"
+        url = f"{_doc_base()}/docx/{td['document_id']}"
     return url
 
 
@@ -708,17 +727,18 @@ def build_mentor_v6(mentor: str, members: list[dict], latest: str,
         # 📈 趋势：8 字描述 + 折线图链接
         sec(f"📈 填报趋势（近 {B.TREND_WINDOW} 期 · 非请假口径）"),
         {"tag": "markdown", "content": trend_head},
-        # 底部按钮（📌 TODO 行已删除；底部灰字已删除）
+        # 底部按钮（📌 TODO 行已删除；底部灰字已删除；TODO 总表链接由海豚解析，缺失时不渲染按钮）
         {"tag": "column_set", "flex_mode": "none", "horizontal_spacing": "8px",
          "columns": [
              {"tag": "column", "width": "weighted", "weight": 1, "elements": [
                  {"tag": "button",
                   "text": {"tag": "plain_text", "content": "📊 打开台账"},
                   "type": "primary", "url": ledger_url}]},
-             {"tag": "column", "width": "weighted", "weight": 1, "elements": [
-                 {"tag": "button",
-                  "text": {"tag": "plain_text", "content": "📋 打开 TODO 总表"},
-                  "type": "primary", "url": TODO_LIST_URL}]},
+             *([{"tag": "column", "width": "weighted", "weight": 1, "elements": [
+                    {"tag": "button",
+                     "text": {"tag": "plain_text", "content": "📋 打开 TODO 总表"},
+                     "type": "primary", "url": _todo_list_url()}]}]
+               if _todo_list_url() else []),
          ]},
     ]
 
@@ -980,13 +1000,15 @@ def build_boss_v6(people: list[dict], latest: str, date_cols: list[str],
         # 趋势（链接版）
         sec(f"📈 填报趋势（近 {B.TREND_WINDOW} 期全公司 · 非请假口径）"),
         {"tag": "markdown", "content": trend_head},
-        {"tag": "column_set", "flex_mode": "none", "horizontal_spacing": "8px",
-         "columns": [
-             {"tag": "column", "width": "weighted", "weight": 1, "elements": [
-                 {"tag": "button",
-                  "text": {"tag": "plain_text", "content": "📋 打开 TODO 总表"},
-                  "type": "primary", "url": TODO_LIST_URL}]},
-         ]},
+        # TODO 总表按钮（链接由海豚解析，缺失时不渲染）
+        *([{"tag": "column_set", "flex_mode": "none", "horizontal_spacing": "8px",
+            "columns": [
+                {"tag": "column", "width": "weighted", "weight": 1, "elements": [
+                    {"tag": "button",
+                     "text": {"tag": "plain_text", "content": "📋 打开 TODO 总表"},
+                     "type": "primary", "url": _todo_list_url()}]},
+            ]}]
+          if _todo_list_url() else []),
         # 落款（与真实卡片截图一致：灰色小字）
         {"tag": "markdown",
          "content": "<font color='#75726F'>海豚三号</font>"},

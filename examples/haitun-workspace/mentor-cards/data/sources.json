@@ -1,0 +1,14 @@
+{
+  "_comment": "海豚每次发卡前用飞书工具（feishu_api wiki get_node / 链接解析 / 文档搜索）核对并写入本文件；代码内不硬编码任何文档链接、token 或 open_id。缺失字段时脚本告警并降级（不产出坏链接）。",
+  "doc_base": "https://genuineknowledge.feishu.cn",
+  "todo_list": {
+    "name": "TODO LIST",
+    "url": "https://genuineknowledge.feishu.cn/wiki/H6icwLWn1iwpXAk73QMcA6MgnWc",
+    "obj_token": "Q7r9s9BiBhFWmot2diUcUY1UnCd",
+    "sheet_id": "46a582"
+  },
+  "collaborators": [
+    {"open_id": "ou_4252f65b5d15191a793262f318c1f598", "name": "马晨柯"},
+    {"open_id": "ou_0c56129dd1574d659af087c88cfe626e", "name": "孙逊"}
+  ]
+}

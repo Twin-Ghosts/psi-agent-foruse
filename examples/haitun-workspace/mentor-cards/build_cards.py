@@ -6,7 +6,7 @@
 --------
 - 契约文档：``mentor-report-card-structure.md``（7 栏目规格 + 口径）
 - 数据源：
-  1. 《TODO LIST》飞书电子表格（wiki 挂载，见 ``TODO_LIST`` 常量）—— 填报/目标/逾期/趋势
+  1. 《TODO LIST》飞书电子表格（wiki 挂载，地址见 data/sources.json，海豚解析写入）—— 填报/目标/逾期/趋势
   2. 飞书审批（请假）``data/leave.json`` —— 由 ``fetch_leave_attendance.py`` 拉取，⑤ 请假标注 + 豁免
   3. 飞书考勤（打卡）``data/attendance.json`` —— 由 ``fetch_leave_attendance.py`` 拉取，① 考勤异常
   4. 飞书通讯录（入职时间）``data/join.json`` —— 由 ``fetch_leave_attendance.py`` 拉取，
@@ -63,14 +63,9 @@ from collections import defaultdict
 from pathlib import Path
 
 # --------------------------------------------------------------------------
-# 数据源地址（在线文档，全部已验证可访问；这是「从哪取数」，不是死数据）
-# --------------------------------------------------------------------------
-TODO_LIST = {
-    "name": "TODO LIST",
-    "url": "https://genuineknowledge.feishu.cn/wiki/H6icwLWn1iwpXAk73QMcA6MgnWc",
-    "obj_token": "Q7r9s9BiBhFWmot2diUcUY1UnCd",
-    "sheet_id": "46a582",
-}
+# 数据源地址（代码内不硬编码任何链接/token；全部由海豚运行时解析写入配置）：
+#   · TODO LIST 文档 → data/sources.json["todo_list"]（海豚发卡前用飞书工具解析写入）
+#   · 各 mentor 台账多维表格 → data/ledger_sources.json（海豚解析台账链接后填入）
 # 各 mentor 台账多维表格来源清单（ledger_sources.json）：每个 mentor 一个台账 base
 # （如 TODO 台账-孙逊）。台账是 ②目标数量 / ③完成情况 / ④逾期明细 / ⑥评价概况 的
 # 权威来源。ledger_sources.json 只是「从哪取数」的地址清单（配置，不是数据）；
@@ -78,14 +73,6 @@ TODO_LIST = {
 # 落盘 data/ledger_<mentor>.json 作审计副本 / 断网回退。未注册台账的组回落
 # 人工核对档案（data/manual_calibration.json），卡面标注口径。
 # 卡片底部「报表」行 = 该 mentor 自己的台账链接（ledger_sources.json 里的 url）。
-
-# 卡片 DSL 规范文档（黄子建）——卡片形态依据行已于 2026-08-28 按用户要求移除，保留定义备查
-DSL_DOCS = [
-    ("通用元素-卡片第一版",
-     "https://genuineknowledge.feishu.cn/wiki/Z9lBwRoEOi7Nt9k0icLc6Jz4nxc"),
-    ("todo：交互界面通用元素（含评审）",
-     "https://genuineknowledge.feishu.cn/wiki/LXCAwRh07izvonklPu9cRE1rnXe"),
-]
 
 # 趋势取最近 N 个周期列（规格，不是数据）
 TREND_WINDOW = 8
@@ -95,16 +82,12 @@ TREND_WINDOW = 8
 # 由海豚按《真知团队信息档案》逐周期核对后更新该文件；台账由 mentor 开始填写
 # （评语/打分/状态）后自动接管 ②③④，见 ledger_active 闸门）
 # --------------------------------------------------------------------------
-_MENTOR_OIDS_FALLBACK = {
-    "周熠": "ou_45f5b073a1294e286eca6ebbea9a52ee",
-    "孙逊": "ou_0c56129dd1574d659af087c88cfe626e",
-    "张浩": "ou_d127ef7e3fdc75813bf0a58440f3eaef",
-    "郑淳": "ou_380190923954d6c5eea8f7edd33d4547",
-    "王金旺": "ou_47c42145d28f93802738229909a28a90",
-    "程秀秀": "ou_60e9c36f7637168048ee1406fd05e224",
-    "李秉千": "ou_478e6d08811c57c557c080f06f2b3b9f",
-    "潘逸轩": "ou_728f1a96cc59ff7f2decffc073393a3a",
-}
+def _load_mentor_oids_fallback() -> dict:
+    """mentor 收卡 open_id 兜底表（data/mentor_oids.json，海豚用通讯录/roster 解析后维护）。"""
+    data = _load_data("mentor_oids.json")
+    if not isinstance(data, dict):
+        return {}
+    return {k: v for k, v in data.items() if not str(k).startswith("_")}
 
 
 def load_calibration() -> dict:
@@ -132,6 +115,37 @@ def _load_data(name: str) -> list | dict | None:
         return json.loads(p.read_text(encoding="utf-8"))
     except (ValueError, OSError):
         return None
+
+
+_TODO_SRC_CACHE: dict | None = None
+
+
+def load_todo_source(force: bool = False) -> dict:
+    """TODO LIST 文档地址（data/sources.json，海豚每次发卡前用飞书工具解析后写入）。
+
+    代码内不硬编码文档链接/token；缺失字段返回空字符串，调用方降级
+    （不产出坏链接）。force=True 强制重新读盘。
+    """
+    global _TODO_SRC_CACHE
+    if force or _TODO_SRC_CACHE is None:
+        data = _load_data("sources.json")
+        tl = ((data or {}).get("todo_list") or {}) if isinstance(data, dict) else {}
+        _TODO_SRC_CACHE = {
+            "name": tl.get("name", "TODO LIST"),
+            "url": tl.get("url", ""),
+            "obj_token": tl.get("obj_token", ""),
+            "sheet_id": tl.get("sheet_id", ""),
+            "doc_base": data.get("doc_base", "") if isinstance(data, dict) else "",
+        }
+    return _TODO_SRC_CACHE
+
+
+def _todo_source_line() -> str:
+    """卡片「数据源」行：有链接给可点链接，缺失时降级为纯文本（不产坏链接）。"""
+    src = load_todo_source()
+    if src["url"]:
+        return f"📎 数据源：[打开 {src['name']} 电子表格]({src['url']})"
+    return f"📎 数据源：{src['name']}（链接待海豚解析）"
 
 
 LEAVE_DATA = _load_data("leave.json")
@@ -162,7 +176,7 @@ def mentor_oids(names: list[str] | None = None) -> dict[str, str]:
     不再被兜底表写死；roster 与兜底表都没有的人才缺失（调用方跳过发卡并告警）。
     """
     roster = load_roster()
-    fallback = _MENTOR_OIDS_FALLBACK
+    fallback = _load_mentor_oids_fallback()
     want = names if names is not None else list(fallback)
     if not roster:
         print("[warn] 未找到 roster.json（fetch_leave_attendance.py 产物），"
@@ -811,10 +825,6 @@ def _note(text: str) -> dict:
     return {"tag": "note", "elements": [{"tag": "plain_text", "content": text}]}
 
 
-def dsl_links_md() -> str:
-    return " · ".join(f"[{esc(t)}]({u})" for t, u in DSL_DOCS)
-
-
 def todo_snapshot() -> str:
     """TODO LIST 解析时间：取 todo_list_parsed.json 的修改时间（导出/解析即当时）。"""
     p = Path(__file__).resolve().parent.parent / "todo_list_parsed.json"
@@ -827,10 +837,12 @@ def todo_snapshot() -> str:
 
 
 def source_note(as_of: str = "", att_window: str = "") -> str:
+    src = load_todo_source()
+    loc = f"{src['url']} · obj_token {src['obj_token']}" if src["url"] else "TODO 总表链接待海豚解析"
     return (
-        f"数据源：{TODO_LIST['name']}（TODO 截至 {todo_snapshot() or '—'}）· "
+        f"数据源：{src['name']}（TODO 截至 {todo_snapshot() or '—'}）· "
         f"飞书审批（请假）· 飞书考勤（打卡 {att_window}，截至 {as_of}）\n"
-        f"{TODO_LIST['url']} · obj_token {TODO_LIST['obj_token']}"
+        f"{loc}"
     )
 
 
@@ -963,8 +975,7 @@ def build_mentor_card(mentor: str, members: list[dict], latest: str,
         _md_div(evaluation_text(evaluation, goals_src)),
         _md_div(trend_line),
         {"tag": "hr"},
-        _md_div(
-            f"📎 数据源：[打开 {TODO_LIST['name']} 电子表格]({TODO_LIST['url']})"),
+        _md_div(_todo_source_line()),
         *(_md_div(
             f"📊 报表：[打开 {ledger_src.get('name', 'TODO 台账')}]({ledger_src['url']})")
           for _ in [0] if ledger_src.get("url")),
@@ -1131,8 +1142,7 @@ def build_boss_card(people: list[dict], latest: str, date_cols: list[str],
         _md_div(f"**📈 趋势**（近 {TREND_WINDOW} 期全公司填报率 · 括号 N 放假 = "
                 f"当日请假在假，请假豁免填报）\n{trend_text} {arrow}"),
         {"tag": "hr"},
-        _md_div(
-            f"📎 数据源：[打开 {TODO_LIST['name']} 电子表格]({TODO_LIST['url']})"),
+        _md_div(_todo_source_line()),
         _note(source_note(as_of, att_window)),
     ]
 
