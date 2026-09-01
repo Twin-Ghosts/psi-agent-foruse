@@ -28,13 +28,13 @@ from collections import defaultdict
 from pathlib import Path
 
 WS = Path(__file__).resolve().parent
-sys.path.insert(0, str(WS / "mentor-cards"))
+sys.path.insert(0, str(WS / "mentor_cards"))
 import build_cards as B  # noqa: E402
 
 FEISHU_DOC_BASE = "https://genuineknowledge.feishu.cn"  # 租户域名（docx 创建接口不返回 url，按此拼接）
 TODO_LIST_URL = f"{FEISHU_DOC_BASE}/wiki/H6icwLWn1iwpXAk73QMcA6MgnWc"
-DETAIL_BASES = WS / "mentor-cards" / "detail_bases.json"
-TREND_DATA = WS / "mentor-cards" / "data" / "trend_data.json"
+DETAIL_BASES = WS / "mentor_cards" / "detail_bases.json"
+TREND_DATA = WS / "mentor_cards" / "data" / "trend_data.json"
 
 # 协作者（自建明细表/趋势文档加协作者用；幂等，失败忽略）
 COLLABORATORS = [
@@ -987,6 +987,9 @@ def build_boss_v6(people: list[dict], latest: str, date_cols: list[str],
                   "text": {"tag": "plain_text", "content": "📋 打开 TODO 总表"},
                   "type": "primary", "url": TODO_LIST_URL}]},
          ]},
+        # 落款（与真实卡片截图一致）
+        {"tag": "note",
+         "elements": [{"tag": "plain_text", "content": "海豚三号"}]},
     ]
 
     return {
@@ -1111,7 +1114,7 @@ def main() -> int:
                                   m["att_window"])
 
     # 输出
-    dest = WS / "mentor-cards" / "mentor_cards_v9.json"
+    dest = WS / "mentor_cards" / "mentor_cards_v9.json"
     dest.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     print(f"[ok] 全部卡片 → {dest}")
 
