@@ -47,6 +47,9 @@ from feishu_mentor_report_send import _fetch_cycle_rows, _stat_fields
 _TEST_ENV_VAR = "PSI_BOSS_CARD_TEST_RECEIVE_ID"
 # T4 mentor 卡的测试环境变量作为兜底：同一测试环境一条变量可同时改投两张卡。
 _FALLBACK_TEST_ENV_VAR = "PSI_REPORT_CARD_TEST_RECEIVE_ID"
+# 统计「今天」基准日期覆盖（YYYY-MM-DD）：单测注入固定日期保证逾期天数稳定，
+# 不随真实运行日期漂移。正式运行不设 → 用真实今天。
+_TODAY_ENV_VAR = "PSI_BOSS_CARD_TODAY"
 
 
 def _mentor_error(msg: str, mentor_name: str = "") -> dict[str, str]:
@@ -69,6 +72,7 @@ async def feishu_boss_overview_send(
     test_receive_id: str = "",
     user_key: str = "",
     identity: str = "",
+    today_iso: str = "",
 ) -> str:
     """给 boss 私聊发送本周期全公司 TODO 总览卡（纯只读）。
 
@@ -89,6 +93,9 @@ async def feishu_boss_overview_send(
             ``PSI_BOSS_CARD_TEST_RECEIVE_ID``；二者皆空时发真实 boss。
         user_key: 调用者 open_id（读台账身份回退用）。
         identity: "user"/"bot"——ensure 建库/授权用（沿用 sync 约定）。
+        today_iso: 可选——统计用「今天」基准日期 YYYY-MM-DD（决定逾期天数）。
+            仅测试注入用；不传则读环境变量 ``PSI_BOSS_CARD_TODAY``，都没有用真实
+            今天。生产调用保持留空，避免口径漂移。
 
     Returns:
         JSON 字符串：ok / boss_open_id / receive_id / test_override /
@@ -203,10 +210,20 @@ async def feishu_boss_overview_send(
         )
 
     # ── 2. 统计（统一口径：build_boss_stats）────────────────────────────────
+    base_today = datetime.date.today()
+    today_src = today_iso.strip() or os.environ.get(_TODAY_ENV_VAR, "").strip()
+    if today_src:
+        try:
+            base_today = datetime.date.fromisoformat(today_src)
+        except ValueError:
+            return json.dumps(
+                {"ok": False, "error": f"today_iso invalid (expect YYYY-MM-DD): {today_src}"},
+                ensure_ascii=False,
+            )
     stats = _boss.build_boss_stats(
         merged_rows,
         mentors=mentors,
-        today=datetime.date.today(),
+        today=base_today,
         top_n=top_n,
     )
 

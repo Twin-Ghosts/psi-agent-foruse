@@ -163,26 +163,6 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- 表格列:table 的子元素,field=多维表格字段名,label=显示标签(缺省=field) -->
-  <xs:element name="col">
-    <xs:complexType>
-      <xs:attribute name="field" type="xs:string" use="required"/>
-      <xs:attribute name="label" type="xs:string" use="optional"/>
-    </xs:complexType>
-  </xs:element>
-
-  <!-- 多维表格数据块:把调用方预取的行(注入 context[source])渲染成卡片块。
-       引擎不做 I/O,行数据由 search_bitable_records 预取后经 context 注入。 -->
-  <xs:element name="table">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element ref="col" minOccurs="0" maxOccurs="unbounded"/>
-      </xs:sequence>
-      <xs:attribute name="source" type="xs:string" use="optional"/>
-      <xs:attribute name="empty" type="xs:string" use="optional"/>
-    </xs:complexType>
-  </xs:element>
-
   <!-- 日期选择器:点选即回调(飞书 2.0 date_picker,实卡验证通过) -->
   <xs:element name="date">
     <xs:complexType>

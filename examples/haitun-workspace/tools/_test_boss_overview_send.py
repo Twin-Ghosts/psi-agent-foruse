@@ -389,6 +389,8 @@ def _run(**kwargs):
         "mentors_json": json.dumps(MENTORS, ensure_ascii=False),
         "folder_token": FOLDER,
         "tree_url": "https://genuineknowledge.feishu.cn/wiki/WIKIROOT",
+        # 固定统计基准日：逾期天数断言不随真实运行日期漂移
+        "today_iso": "2026-08-28",
     }
     defaults.update(kwargs)
     return json.loads(asyncio.run(_send.feishu_boss_overview_send(**defaults)))
