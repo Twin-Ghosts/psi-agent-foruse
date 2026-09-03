@@ -1,0 +1,320 @@
+{
+  "schema": "2.0",
+  "config": {
+    "width_mode": "regular",
+    "enable_forward": true
+  },
+  "header": {
+    "title": {
+      "tag": "plain_text",
+      "content": "📊 全公司 TODO 总览 · 8.28 第16周期"
+    },
+    "template": "red"
+  },
+  "body": {
+    "elements": [
+      {
+        "tag": "markdown",
+        "content": "<font color='#8F959E'>🗂 台账+人工核对　🕐 数据截至 08-29 12:28　👥 在册 31 人 · 🏢 8 团队</font>"
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "markdown",
+        "content": "<font color='#1F2329'>**👥 ① 人员与填报**</font>"
+      },
+      {
+        "tag": "column_set",
+        "flex_mode": "none",
+        "horizontal_spacing": "4px",
+        "background_style": "grey",
+        "columns": [
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "vertical_align": "top",
+            "elements": [
+              {
+                "tag": "markdown",
+                "content": "<font size='26px' color='#34C724'>**30/31**</font>",
+                "text_align": "center"
+              },
+              {
+                "tag": "markdown",
+                "content": "<font color='grey'>填报</font>",
+                "text_align": "center"
+              }
+            ]
+          },
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "vertical_align": "top",
+            "elements": [
+              {
+                "tag": "markdown",
+                "content": "<font size='26px' color='#3370FF'>**31**</font>",
+                "text_align": "center"
+              },
+              {
+                "tag": "markdown",
+                "content": "<font color='grey'>在册</font>",
+                "text_align": "center"
+              }
+            ]
+          },
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "vertical_align": "top",
+            "elements": [
+              {
+                "tag": "markdown",
+                "content": "<font size='26px' color='#34C724'>**0**</font>",
+                "text_align": "center"
+              },
+              {
+                "tag": "markdown",
+                "content": "<font color='grey'>未按时</font>",
+                "text_align": "center"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "markdown",
+        "content": "<font color='#1F2329'>**📊 ② 任务与台账**</font>"
+      },
+      {
+        "tag": "column_set",
+        "flex_mode": "none",
+        "horizontal_spacing": "4px",
+        "background_style": "grey",
+        "columns": [
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "vertical_align": "top",
+            "elements": [
+              {
+                "tag": "markdown",
+                "content": "<font size='26px' color='#34C724'>**2**</font>",
+                "text_align": "center"
+              },
+              {
+                "tag": "markdown",
+                "content": "<font color='grey'>已闭环</font>",
+                "text_align": "center"
+              }
+            ]
+          },
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "vertical_align": "top",
+            "elements": [
+              {
+                "tag": "markdown",
+                "content": "<font size='26px' color='#FA8C16'>**3**</font>",
+                "text_align": "center"
+              },
+              {
+                "tag": "markdown",
+                "content": "<font color='grey'>进行中</font>",
+                "text_align": "center"
+              }
+            ]
+          },
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "vertical_align": "top",
+            "elements": [
+              {
+                "tag": "markdown",
+                "content": "<font size='26px' color='#F53F3F'>**10**</font>",
+                "text_align": "center"
+              },
+              {
+                "tag": "markdown",
+                "content": "<font color='grey'>逾期</font>",
+                "text_align": "center"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "markdown",
+        "content": "<font color='#1F2329'>**🏢 ③ 团队与考勤**</font>"
+      },
+      {
+        "tag": "column_set",
+        "flex_mode": "none",
+        "horizontal_spacing": "4px",
+        "background_style": "grey",
+        "columns": [
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "vertical_align": "top",
+            "elements": [
+              {
+                "tag": "markdown",
+                "content": "<font size='26px' color='#3370FF'>**8**</font>",
+                "text_align": "center"
+              },
+              {
+                "tag": "markdown",
+                "content": "<font color='grey'>团队</font>",
+                "text_align": "center"
+              }
+            ]
+          },
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "vertical_align": "top",
+            "elements": [
+              {
+                "tag": "markdown",
+                "content": "<font size='26px' color='#FA8C16'>**8**</font>",
+                "text_align": "center"
+              },
+              {
+                "tag": "markdown",
+                "content": "<font color='grey'>请假</font>",
+                "text_align": "center"
+              }
+            ]
+          },
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "vertical_align": "top",
+            "elements": [
+              {
+                "tag": "markdown",
+                "content": "<font size='26px' color='#F53F3F'>**8**</font>",
+                "text_align": "center"
+              },
+              {
+                "tag": "markdown",
+                "content": "<font color='grey'>考勤异常</font>",
+                "text_align": "center"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "markdown",
+        "content": "<font color='#1F2329'>**🏢 团队维度（8 组）**</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "8 组 · 人数/填报/未填/请假/逾期/填报率　<font color='grey'>[打开明细 →](https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tblAqIJRshturKoq)</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "<font color='#1F2329'>**🗂 台账总览（各组 ②③⑥）**</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "8 组 · 大/小/TODO/已闭环/进行中/逾期/评分　<font color='grey'>[打开明细 →](https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tbleK0DTqrP0pyim)</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "<font color='#1F2329'>**✅ 已闭环任务（2）**</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "全公司已交付任务 2 条　<font color='grey'>[明细 →](https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tblfKqTIv9rDlM8W)</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "<font color='#1F2329'>**🔄 进行中任务（3）**</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "全公司进行中任务 3 条　<font color='grey'>[明细 →](https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tblgSgTi2jQZa5zH)</font>"
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "markdown",
+        "content": "<font color='#1F2329'>**⚠️ 逾期明细（全公司 10 条）**</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "全公司逾期 10 条 · 负责人/任务/延期说明　<font color='grey'>[明细 →](https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tblxxzoKjeRPAYqP)</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "<font color='#1F2329'>**🏖 请假标注（飞书审批 · 近周期 8 人）**</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "近周期已批准请假 8 人 · 姓名/团队/类型/起止/天数　<font color='grey'>[明细 →](https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tbl8ZUZpa3MpE5Ch)</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "<font color='#1F2329'>**⏰ 考勤异常（8.22–8.28 · 真实打卡）**</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "本窗口 8 人异常 · 姓名/缺卡/迟到/早退　<font color='grey'>[明细 →](https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tblpn3ADGkUWSj3e)</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "<font color='#1F2329'>**📈 填报趋势（近 8 期全公司 · 非请假口径）**</font>"
+      },
+      {
+        "tag": "markdown",
+        "content": "📈 **高位稳定**　<font color='grey'>（折线图生成中）</font>"
+      },
+      {
+        "tag": "column_set",
+        "flex_mode": "none",
+        "horizontal_spacing": "8px",
+        "columns": [
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "elements": [
+              {
+                "tag": "button",
+                "text": {
+                  "tag": "plain_text",
+                  "content": "📋 打开 TODO 总表"
+                },
+                "type": "primary",
+                "url": "https://genuineknowledge.feishu.cn/wiki/H6icwLWn1iwpXAk73QMcA6MgnWc"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "markdown",
+        "content": "<font color='#75726F'>海豚三号</font>"
+      }
+    ]
+  }
+}

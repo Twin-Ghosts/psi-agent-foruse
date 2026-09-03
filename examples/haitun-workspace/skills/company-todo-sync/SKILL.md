@@ -169,6 +169,10 @@ category: productivity
    - **卡片结构**：标题「TODO 报表·周期 <日期>·<mentor>团队」+ 台账链接 + 统计摘要 + 本周期明细
      （每条：层级标签、标题、截止日期、当前状态），干净卡片，不混杂字。**判假说明只在有请假时写**
      （整周期→该人「请假」；部分周期→「截止顺延 N 天」），无请假时不写「无请假/无顺延」字样。
+     > 版式升级：要发 **v9「六区数字格」报表卡**（卡头「📋 周期报表 · <周期> · <mentor>团队」，
+     > 灰底大数字 + boss 全公司总览卡）时，见 `feishu-cycle-report-card` 技能——跑生成器
+     > `六区数字卡-真实卡片v9.py` 产出 `mentor-cards/mentor_cards_v9.json`，再 `feishu_message_send_card`
+     > 原样投递。本条的「TODO 报表·周期」是更早的简化版式。
    - **测试模式**：试运行期间报表推给**测试者本人**（如黄子建）代替 mentor，不推真实 mentor、不发群。
 6. 台账联动（勾选→状态）依赖发卡时带 `ledger_app_token`/`ledger_table_id` 和每行 `ledger_record_id`
    ——其中 `ledger_table_id` 是**本周期表**（第 1.5 条），不是历史表；

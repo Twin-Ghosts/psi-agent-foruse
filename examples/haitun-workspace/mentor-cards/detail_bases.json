@@ -1,0 +1,50 @@
+{
+ "孙逊": {
+  "app_token": "UVIybSUoBaoQRWslfiTcwKUknHb",
+  "name": "海豚·孙逊组·周期明细（任务）",
+  "tasks": {
+   "closed": {
+    "table_id": "tblkZXT1GamqCqTp",
+    "url": "https://genuineknowledge.feishu.cn/base/UVIybSUoBaoQRWslfiTcwKUknHb?table=tblkZXT1GamqCqTp"
+   },
+   "doing": {
+    "table_id": "tbl7v1uKoTeCf8i1",
+    "url": "https://genuineknowledge.feishu.cn/base/UVIybSUoBaoQRWslfiTcwKUknHb?table=tbl7v1uKoTeCf8i1"
+   }
+  }
+ },
+ "__boss__": {
+  "app_token": "MapsbjSMfaMsnQsn423cdZJonuc",
+  "name": "海豚·全公司·周期明细",
+  "team": {
+   "table_id": "tblAqIJRshturKoq",
+   "url": "https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tblAqIJRshturKoq"
+  },
+  "tasks": {
+   "closed": {
+    "table_id": "tblfKqTIv9rDlM8W",
+    "url": "https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tblfKqTIv9rDlM8W"
+   },
+   "doing": {
+    "table_id": "tblgSgTi2jQZa5zH",
+    "url": "https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tblgSgTi2jQZa5zH"
+   }
+  },
+  "ledger": {
+   "table_id": "tbleK0DTqrP0pyim",
+   "url": "https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tbleK0DTqrP0pyim"
+  },
+  "overdue": {
+   "table_id": "tblxxzoKjeRPAYqP",
+   "url": "https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tblxxzoKjeRPAYqP"
+  },
+  "leave": {
+   "table_id": "tbl8ZUZpa3MpE5Ch",
+   "url": "https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tbl8ZUZpa3MpE5Ch"
+  },
+  "att": {
+   "table_id": "tblpn3ADGkUWSj3e",
+   "url": "https://genuineknowledge.feishu.cn/base/MapsbjSMfaMsnQsn423cdZJonuc?table=tblpn3ADGkUWSj3e"
+  }
+ }
+}

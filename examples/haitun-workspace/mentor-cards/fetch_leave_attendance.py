@@ -32,6 +32,7 @@ import datetime
 import json
 import os
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -57,8 +58,19 @@ def _req(method: str, path: str, body: dict | None = None, token: str = "") -> d
     if body is not None:
         data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        # 4xx/5xx（如通讯录可见范围受限的 403）：把飞书 body 解出来当 error dict 返回，
+        # 让调用点按 code 决定回退，而不是让异常炸穿整个 fetch 流程。
+        try:
+            payload = json.loads(e.read().decode("utf-8"))
+            if isinstance(payload, dict) and "code" in payload:
+                return payload
+        except (ValueError, OSError):
+            pass
+        return {"code": e.code, "msg": f"HTTP {e.code} {e.reason}"}
 
 
 def get_tenant_token() -> str:
@@ -95,6 +107,7 @@ def fetch_roster(token: str) -> None:
     """
     members: list[dict] = []
     page_token = ""
+    roster_p = HERE / "roster.json"
     while True:
         q = urllib.parse.urlencode({
             "department_id": "0",
@@ -105,7 +118,15 @@ def fetch_roster(token: str) -> None:
             q += "&page_token=" + urllib.parse.quote(page_token, safe="")
         res = _req("GET", f"/open-apis/contact/v3/users/find_by_department?{q}", token=token)
         if res.get("code") != 0:
-            print(f"[err] 通讯录拉取失败: {res}", file=sys.stderr)
+            # 通讯录可见范围受限（40004）等：不 fatal。已有 roster 就保留并继续跑
+            # 请假/考勤/入职（它们只需 roster 里的 open_id/user_id，不依赖本次拉取）。
+            if roster_p.exists():
+                print(f"[warn] 通讯录端点失败（{res.get('code')}: {res.get('msg')}），"
+                      f"**保留现有 roster.json 不覆盖**，继续用它跑请假/考勤/入职。"
+                      f"如需刷新全员名单，请用海豚 feishu_department_members(recursive=True)。",
+                      file=sys.stderr)
+                return
+            print(f"[err] 通讯录拉取失败且无现有 roster.json 可用: {res}", file=sys.stderr)
             sys.exit(1)
         data = res.get("data", {}) or {}
         for item in data.get("items", []):
@@ -120,7 +141,6 @@ def fetch_roster(token: str) -> None:
             break
 
     cur_count = 0
-    roster_p = HERE / "roster.json"
     if roster_p.exists():
         try:
             cur_count = len(json.loads(roster_p.read_text(encoding="utf-8")).get("members", []))

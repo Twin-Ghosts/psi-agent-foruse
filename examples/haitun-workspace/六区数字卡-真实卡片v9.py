@@ -28,13 +28,15 @@ from collections import defaultdict
 from pathlib import Path
 
 WS = Path(__file__).resolve().parent
-sys.path.insert(0, str(WS / "mentor_cards"))
+# 目录在本仓为 "mentor-cards"（连字符）；老环境用下划线。两者都兼容。
+MC = WS / "mentor-cards" if (WS / "mentor-cards").exists() else WS / "mentor_cards"
+sys.path.insert(0, str(MC))
 import build_cards as B  # noqa: E402
 
 FEISHU_DOC_BASE = ""  # 租户域名：由海豚运行时解析（data/sources.json["doc_base"]），代码不硬编码
 TODO_LIST_URL = ""  # TODO 总表链接：由海豚运行时解析（data/sources.json["todo_list"]）
-DETAIL_BASES = WS / "mentor_cards" / "detail_bases.json"
-TREND_DATA = WS / "mentor_cards" / "data" / "trend_data.json"
+DETAIL_BASES = MC / "detail_bases.json"
+TREND_DATA = MC / "data" / "trend_data.json"
 
 # 协作者（自建明细表/趋势文档加协作者用；幂等，失败忽略）——海豚解析后写入 sources.json
 COLLABORATORS = []
@@ -1136,7 +1138,7 @@ def main() -> int:
                                   m["att_window"])
 
     # 输出
-    dest = WS / "mentor_cards" / "mentor_cards_v9.json"
+    dest = MC / "mentor_cards_v9.json"
     dest.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     print(f"[ok] 全部卡片 → {dest}")
 
